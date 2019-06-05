@@ -104,26 +104,27 @@ public struct AdditiveQuotientGroup<Base, Sub: AdditiveSubgroup>: AdditiveQuotie
 
 public protocol AdditiveGroupHomType: MapType, AdditiveGroup where Domain: AdditiveGroup, Codomain: AdditiveGroup {}
 
-public extension AdditiveGroupHomType {
-    static var zero: Self {
+extension AdditiveGroupHomType where Self: InitializableByFunction {
+    public static var zero: Self {
         return Self { x in .zero }
     }
-    static func + (f: Self, g: Self) -> Self {
+    
+    public static func + (f: Self, g: Self) -> Self {
         return Self { x in f.applied(to: x) + g.applied(to: x) }
     }
     
-    prefix static func - (f: Self) -> Self {
+    public prefix static func - (f: Self) -> Self {
         return Self { x in -f.applied(to: x) }
     }
     
-    static func sum(_ elements: [Self]) -> Self {
+    public static func sum(_ elements: [Self]) -> Self {
         return Self { x in
             elements.map{ f in f.applied(to: x) }.sumAll()
         }
     }
 }
 
-public struct AdditiveGroupHom<X: AdditiveGroup, Y: AdditiveGroup>: AdditiveGroupHomType {
+public struct AdditiveGroupHom<X: AdditiveGroup, Y: AdditiveGroup>: AdditiveGroupHomType, InitializableByFunction {
     public typealias Domain = X
     public typealias Codomain = Y
     

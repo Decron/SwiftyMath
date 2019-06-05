@@ -183,7 +183,7 @@ extension QuotientRing: ExpressibleByIntegerLiteral where Base: ExpressibleByInt
 
 public protocol RingHomType: AdditiveGroupHomType where Domain: Ring, Codomain: Ring {}
 
-public struct RingHom<X: Ring, Y: Ring>: RingHomType {
+public struct RingHom<X: Ring, Y: Ring>: RingHomType, InitializableByFunction {
     public typealias Domain = X
     public typealias Codomain = Y
     

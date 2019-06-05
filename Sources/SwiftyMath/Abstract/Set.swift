@@ -112,7 +112,6 @@ public struct QuotientSet<X, E: EquivalenceRelation>: QuotientSetType where X ==
 public protocol MapType: SetType {
     associatedtype Domain: SetType
     associatedtype Codomain: SetType
-    init (_ f: @escaping (Domain) -> Codomain)
     func applied(to x: Domain) -> Codomain
 }
 
@@ -132,10 +131,13 @@ public extension MapType {
     static func == (lhs: Self, rhs: Self) -> Bool {
         fatalError("MapType is not equatable.")
     }
-
 }
 
-public struct Map<X: SetType, Y: SetType>: MapType {
+public protocol InitializableByFunction: MapType {
+    init (_ f: @escaping (Domain) -> Codomain)
+}
+
+public struct Map<X: SetType, Y: SetType>: MapType, InitializableByFunction {
     public typealias Domain = X
     public typealias Codomain = Y
     
@@ -163,17 +165,19 @@ public protocol EndType: MapType where Domain == Codomain {
     static func ∘(g: Self, f: Self) -> Self
 }
 
-public extension EndType {
-    static var identity: Self {
+extension EndType {
+    public static func ∘(g: Self, f: Self) -> Self {
+        return g.composed(with: f)
+    }
+}
+
+extension EndType where Self: InitializableByFunction {
+    public static var identity: Self {
         return Self { $0 }
     }
     
-    func composed(with g: Self) -> Self {
+    public func composed(with g: Self) -> Self {
         return Self { x in self.applied( to: g.applied(to: x) ) }
-    }
-
-    static func ∘(g: Self, f: Self) -> Self {
-        return g.composed(with: f)
     }
 }
 

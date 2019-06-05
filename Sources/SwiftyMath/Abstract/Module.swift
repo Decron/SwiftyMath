@@ -68,17 +68,17 @@ public struct QuotientModule<Base, Sub: Submodule>: QuotientModuleType where Bas
 
 public protocol ModuleHomType: AdditiveGroupHomType, Module where Domain: Module, Codomain: Module, CoeffRing == Domain.CoeffRing, CoeffRing == Codomain.CoeffRing {}
 
-public extension ModuleHomType {
-    static func *(r: CoeffRing, f: Self) -> Self {
+extension ModuleHomType where Self: InitializableByFunction {
+    public static func *(r: CoeffRing, f: Self) -> Self {
         return Self { x in r * f.applied(to: x) }
     }
     
-    static func *(f: Self, r: CoeffRing) -> Self {
+    public static func *(f: Self, r: CoeffRing) -> Self {
         return Self { x in f.applied(to: x) * r }
     }
 }
 
-public struct ModuleHom<X: Module, Y: Module>: ModuleHomType where X.CoeffRing == Y.CoeffRing {
+public struct ModuleHom<X: Module, Y: Module>: ModuleHomType, InitializableByFunction where X.CoeffRing == Y.CoeffRing {
     public typealias CoeffRing = X.CoeffRing
     public typealias Domain = X
     public typealias Codomain = Y

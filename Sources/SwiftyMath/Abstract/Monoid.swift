@@ -47,12 +47,11 @@ public struct ProductMonoid<X: Monoid, Y: Monoid>: ProductMonoidType {
 
 public protocol MonoidHomType: MapType where Domain: Monoid, Codomain: Monoid {}
 
-public struct MonoidHom<X: Monoid, Y: Monoid>: MonoidHomType {
+public struct MonoidHom<X: Monoid, Y: Monoid>: MonoidHomType, InitializableByFunction {
     public typealias Domain = X
     public typealias Codomain = Y
     
     private let f: (X) -> Y
-    
     public init(_ f: @escaping (X) -> Y) {
         self.f = f
     }
