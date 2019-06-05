@@ -121,10 +121,6 @@ public struct FreeModule<A: FreeModuleGenerator, R: Ring>: FreeModuleType {
     }
 }
 
-public func *<A, R>(v: [A], a: DMatrix<R>) -> [FreeModule<A, R>] {
-    return v.map{ .wrap($0) } * a
-}
-
 public func *<A, R>(v: [FreeModule<A, R>], a: DMatrix<R>) -> [FreeModule<A, R>] {
     assert(v.count == a.rows)
     return (0 ..< a.cols).map{ j in
