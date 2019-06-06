@@ -17,6 +17,10 @@ public struct T<A: FreeModuleGenerator>: FreeModuleGenerator {
         self.factors = factors
     }
     
+    init<S: Sequence>(_ factors: S) where S.Element == A {
+        self.init(factors.toArray())
+    }
+    
     public subscript(i: Int) -> A {
         return factors[i]
     }
@@ -29,7 +33,7 @@ public struct T<A: FreeModuleGenerator>: FreeModuleGenerator {
         return T([])
     }
     
-    public static func *(t1: T<A>, t2: T<A>) -> T<A> {
+    public static func ⊗(t1: T<A>, t2: T<A>) -> T<A> {
         return T(t1.factors + t2.factors)
     }
     
@@ -46,7 +50,7 @@ extension T: Codable where A: Codable {}
 
 public typealias AbstractTensorAlgebra<R: Ring> = FreeModule<T<AbstractGenerator>, R>
 
-extension FreeModule: Monoid where A == T<AbstractGenerator> {
+extension FreeModule where A == T<AbstractGenerator> {
     public static func wrap(_ z: AbstractFreeModule<R>) -> AbstractTensorAlgebra<R> {
         return z.convertGenerators{ a in T(a) }
     }
@@ -68,13 +72,119 @@ extension FreeModule: Monoid where A == T<AbstractGenerator> {
         return .wrap(.unit)
     }
     
-    public static func *(a: AbstractTensorAlgebra<R>, b: AbstractTensorAlgebra<R>) -> AbstractTensorAlgebra<R> {
+    public static func ⊗(a: AbstractTensorAlgebra<R>, b: AbstractTensorAlgebra<R>) -> AbstractTensorAlgebra<R> {
         return a.elements.sum { (t1, r1) in
             b.elements.sum { (t2, r2) in
                 let r = r1 * r2
-                let t = t1 * t2
+                let t = t1 ⊗ t2
                 return r * .wrap(t)
             }
         }
+    }
+}
+
+public struct AbstractTensorAlgebraHom<R: Ring>: ModuleHomType {
+    public typealias CoeffRing = R
+    public typealias Domain   = AbstractTensorAlgebra<R>
+    public typealias Codomain = AbstractTensorAlgebra<R>
+
+    public let  inputFactors: Int
+    public let outputFactors: Int
+    private let f: (Domain) -> Codomain
+    
+    public init(inputFactors: Int, outputFactors: Int, _ f: @escaping (Domain) -> Codomain) {
+        self.inputFactors = inputFactors
+        self.outputFactors = outputFactors
+        self.f = f
+    }
+    
+    public static func linearlyExtend(inputFactors: Int, outputFactors: Int, _ f: @escaping (T<AbstractGenerator>) -> Domain) -> AbstractTensorAlgebraHom<R> {
+        return AbstractTensorAlgebraHom(inputFactors: inputFactors, outputFactors: outputFactors) {
+            applyWithAssertion(inputFactors, outputFactors, $0) {
+                $0.elements.map{ (t, r) in r * f(t) }.sumAll()
+            }
+        }
+    }
+    
+    public static func wrap(_ f: ModuleEnd<AbstractFreeModule<R>>) -> AbstractTensorAlgebraHom<R> {
+        return AbstractTensorAlgebraHom(inputFactors: 1, outputFactors: 1) {
+            applyWithAssertion(1, 1, $0) {
+                // unwrap -> apply -> wrap
+                f.applied(to: $0.convertGenerators{ $0.factors[0] } ).convertGenerators{ T($0) }
+            }
+        }
+    }
+    
+    public static var zero: AbstractTensorAlgebraHom<R> {
+        fatalError()
+    }
+    
+    public static func identityMap(factors: Int) -> AbstractTensorAlgebraHom {
+        return AbstractTensorAlgebraHom(inputFactors: factors, outputFactors: factors) { $0 }
+    }
+    
+    public static func + (f: AbstractTensorAlgebraHom<R>, g: AbstractTensorAlgebraHom<R>) -> AbstractTensorAlgebraHom<R> {
+        assert(f.inputFactors == g.inputFactors)
+        assert(f.outputFactors == g.outputFactors)
+        return AbstractTensorAlgebraHom(inputFactors: f.inputFactors, outputFactors: f.outputFactors) {
+            x in f.applied(to: x) + g.applied(to: x)
+        }
+    }
+    
+    public static prefix func - (f: AbstractTensorAlgebraHom<R>) -> AbstractTensorAlgebraHom<R> {
+        return AbstractTensorAlgebraHom(inputFactors: f.inputFactors, outputFactors: f.outputFactors) {
+            x in -f.applied(to: x)
+        }
+    }
+    
+    public static func * (r: R, f: AbstractTensorAlgebraHom<R>) -> AbstractTensorAlgebraHom<R> {
+        return AbstractTensorAlgebraHom(inputFactors: f.inputFactors, outputFactors: f.outputFactors) {
+            x in r * f.applied(to: x)
+        }
+    }
+    
+    public static func * (f: AbstractTensorAlgebraHom<R>, r: R) -> AbstractTensorAlgebraHom<R> {
+        return AbstractTensorAlgebraHom(inputFactors: f.inputFactors, outputFactors: f.outputFactors) {
+            x in f.applied(to: x) * r
+        }
+    }
+    
+    public static func ⊗ (f: AbstractTensorAlgebraHom<R>, g: AbstractTensorAlgebraHom<R>) -> AbstractTensorAlgebraHom<R> {
+        return AbstractTensorAlgebraHom.linearlyExtend(inputFactors: f.inputFactors + g.inputFactors, outputFactors: f.outputFactors + g.outputFactors) {
+            (x: T<AbstractGenerator>) in
+            let x1 = T(x.factors[0 ..< f.inputFactors])
+            let x2 = T(x.factors[f.inputFactors ..< x.factors.count])
+            return f.applied(to: .wrap(x1)) ⊗ g.applied(to: .wrap(x2))
+        }
+    }
+    
+    public func applied(to x: AbstractTensorAlgebra<R>) -> AbstractTensorAlgebra<R> {
+        return applyWithAssertion(x, f)
+    }
+    
+    public func composed(with f: AbstractTensorAlgebraHom<R>) -> AbstractTensorAlgebraHom<R> {
+        assert(f.outputFactors == self.inputFactors)
+        return AbstractTensorAlgebraHom(inputFactors: f.inputFactors, outputFactors: self.outputFactors) {
+            x in self.applied( to: f.applied(to: x) )
+        }
+    }
+    
+    public static func ∘(g: AbstractTensorAlgebraHom<R>, f: AbstractTensorAlgebraHom<R>) -> AbstractTensorAlgebraHom<R> {
+        return g.composed(with: f)
+    }
+    
+    private static func assertFactors(_ factors: Int, _ x: Domain) {
+        assert(x.generators.allSatisfy{ $0.factors.count == factors } )
+    }
+    
+    private static func applyWithAssertion(_ inputFactors: Int, _ outputFactors: Int, _ x: Domain, _ f: (Domain) -> Codomain) -> Codomain {
+        assertFactors(inputFactors, x)
+        let y = f(x)
+        assertFactors(outputFactors, y)
+        return y
+    }
+    
+    private func applyWithAssertion(_ x: Domain, _ f: (Domain) -> Codomain) -> Codomain {
+        return AbstractTensorAlgebraHom<R>.applyWithAssertion(inputFactors, outputFactors, x, f)
     }
 }
