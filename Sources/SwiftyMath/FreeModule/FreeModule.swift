@@ -132,10 +132,21 @@ public func *<A, R>(v: [FreeModule<A, R>], a: DMatrix<R>) -> [FreeModule<A, R>] 
 
 extension FreeModule: VectorSpace where R: Field {}
 
+// MEMO: with parameterized extension, we would like to write:
+// extension<A, B> ModuleHom where X == FreeModule<A, R>, Y == FreeModule<B, R>
+
 extension ModuleHom where X: FreeModuleType, Y: FreeModuleType {
     public static func linearlyExtend(_ f: @escaping (X.Generator) -> Codomain) -> ModuleHom<X, Y> {
         return ModuleHom { (m: Domain) in
             m.elements.map{ (a, r) in r * f(a) }.sumAll()
+        }
+    }
+    
+    public static func generateFrom(inputBasis: [X.Generator], outputBasis: [Y.Generator], matrix: DMatrix<CoeffRing>) -> ModuleHom<X, Y> {
+        let indexer = inputBasis.indexer()
+        return ModuleHom.linearlyExtend { e in
+            guard let j = indexer(e) else { return .zero }
+            return Y(generators: outputBasis, components: matrix.colVector(j).grid)
         }
     }
     
