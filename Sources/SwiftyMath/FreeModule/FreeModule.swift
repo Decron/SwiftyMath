@@ -142,22 +142,22 @@ extension ModuleHom where X: FreeModuleType, Y: FreeModuleType {
         }
     }
     
-    public static func generateFrom(inputBasis: [X.Generator], outputBasis: [Y.Generator], matrix: DMatrix<CoeffRing>) -> ModuleHom<X, Y> {
-        let indexer = inputBasis.indexer()
+    public static func fromMatrix(inputGenerators input: [X.Generator], outputGenerators output: [Y.Generator], matrix: DMatrix<CoeffRing>) -> ModuleHom<X, Y> {
+        let indexer = input.indexer()
         return ModuleHom.linearlyExtend { e in
             guard let j = indexer(e) else { return .zero }
-            return Y(generators: outputBasis, components: matrix.colVector(j).grid)
+            return Y(generators: output, components: matrix.colVector(j).grid)
         }
     }
     
-    public func asMatrix(from: [X.Generator], to: [Y.Generator]) -> DMatrix<CoeffRing> {
-        let comps = from.enumerated().flatMap { (j, a) -> [MatrixComponent<CoeffRing>] in
+    public func asMatrix(inputGenerators input: [X.Generator], outputGenerators output: [Y.Generator]) -> DMatrix<CoeffRing> {
+        let comps = input.enumerated().flatMap { (j, a) -> [MatrixComponent<CoeffRing>] in
             let w = self.applied(to: .wrap(a))
-            return w.factorize(by: to).enumerated().compactMap { (i, a) in
+            return w.factorize(by: output).enumerated().compactMap { (i, a) in
                 a != .zero ? MatrixComponent(i, j, a) : nil
             }
         }
-        return DMatrix(rows: to.count, cols: from.count, components: comps)
+        return DMatrix(rows: output.count, cols: input.count, components: comps)
     }
 }
 

@@ -55,17 +55,15 @@ extension FreeModule where A == T<AbstractGenerator> {
         return z.convertGenerators{ a in T(a) }
     }
     
-    public static func generateBasis(from: [AbstractFreeModule<R>], power n: Int) -> [AbstractTensorAlgebra<R>] {
-        assert( from.allSatisfy{$0.isSingle} )
+    public static func produceGenerators(from generators: [AbstractGenerator], power n: Int) -> [T<AbstractGenerator>] {
         if n == 0 {
             return []
         }
         
-        let basis = from.map{ $0.unwrap() }
-        let tensorBasis = (0 ..< n - 1).reduce(basis.map{ [$0] }) { (result, _) -> [[AbstractGenerator]] in
-            result.allCombinations(with: basis).map{ (list, e) in list.appended(e) }
+        let tGenerators = (0 ..< n - 1).reduce(generators.map{ [$0] }) { (result, _) -> [[AbstractGenerator]] in
+            result.allCombinations(with: generators).map{ (list, e) in list.appended(e) }
         }
-        return tensorBasis.map{ factors in .wrap(T(factors)) }
+        return tGenerators.map{ factors in T(factors) }
     }
     
     public static var identity: FreeModule<T<AbstractGenerator>, R> {
@@ -99,15 +97,29 @@ public struct AbstractTensorAlgebraHom<R: Ring>: ModuleHomType {
     }
     
     public static func linearlyExtend(inputFactors: Int, outputFactors: Int, _ f: @escaping (T<AbstractGenerator>) -> Domain) -> AbstractTensorAlgebraHom<R> {
-        return AbstractTensorAlgebraHom(inputFactors: inputFactors, outputFactors: outputFactors) {
+        return .init(inputFactors: inputFactors, outputFactors: outputFactors) {
             applyWithAssertion(inputFactors, outputFactors, $0) {
                 $0.elements.map{ (t, r) in r * f(t) }.sumAll()
             }
         }
     }
     
+    public static func fromMatrix(inputGenerators input: [T<AbstractGenerator>], outputGenerators output: [T<AbstractGenerator>], matrix: DMatrix<CoeffRing>) -> AbstractTensorAlgebraHom<R> {
+        let  inputFactors =  input.first!.factors.count
+        let outputFactors = output.first!.factors.count
+        
+        assert(  input.allSatisfy{ $0.factors.count ==  inputFactors } )
+        assert( output.allSatisfy{ $0.factors.count == outputFactors } )
+        
+        let indexer = input.indexer()
+        return .linearlyExtend(inputFactors: inputFactors, outputFactors: outputFactors) { t in
+            guard let j = indexer(t) else { return .zero }
+            return .init(generators: output, components: matrix.colVector(j).grid)
+        }
+    }
+    
     public static func wrap(_ f: ModuleEnd<AbstractFreeModule<R>>) -> AbstractTensorAlgebraHom<R> {
-        return AbstractTensorAlgebraHom(inputFactors: 1, outputFactors: 1) {
+        return .init(inputFactors: 1, outputFactors: 1) {
             applyWithAssertion(1, 1, $0) {
                 // unwrap -> apply -> wrap
                 f.applied(to: $0.convertGenerators{ $0.factors[0] } ).convertGenerators{ T($0) }
@@ -120,37 +132,37 @@ public struct AbstractTensorAlgebraHom<R: Ring>: ModuleHomType {
     }
     
     public static func identityMap(factors: Int) -> AbstractTensorAlgebraHom {
-        return AbstractTensorAlgebraHom(inputFactors: factors, outputFactors: factors) { $0 }
+        return .init(inputFactors: factors, outputFactors: factors) { $0 }
     }
     
     public static func + (f: AbstractTensorAlgebraHom<R>, g: AbstractTensorAlgebraHom<R>) -> AbstractTensorAlgebraHom<R> {
         assert(f.inputFactors == g.inputFactors)
         assert(f.outputFactors == g.outputFactors)
-        return AbstractTensorAlgebraHom(inputFactors: f.inputFactors, outputFactors: f.outputFactors) {
+        return .init(inputFactors: f.inputFactors, outputFactors: f.outputFactors) {
             x in f.applied(to: x) + g.applied(to: x)
         }
     }
     
     public static prefix func - (f: AbstractTensorAlgebraHom<R>) -> AbstractTensorAlgebraHom<R> {
-        return AbstractTensorAlgebraHom(inputFactors: f.inputFactors, outputFactors: f.outputFactors) {
+        return .init(inputFactors: f.inputFactors, outputFactors: f.outputFactors) {
             x in -f.applied(to: x)
         }
     }
     
     public static func * (r: R, f: AbstractTensorAlgebraHom<R>) -> AbstractTensorAlgebraHom<R> {
-        return AbstractTensorAlgebraHom(inputFactors: f.inputFactors, outputFactors: f.outputFactors) {
+        return .init(inputFactors: f.inputFactors, outputFactors: f.outputFactors) {
             x in r * f.applied(to: x)
         }
     }
     
     public static func * (f: AbstractTensorAlgebraHom<R>, r: R) -> AbstractTensorAlgebraHom<R> {
-        return AbstractTensorAlgebraHom(inputFactors: f.inputFactors, outputFactors: f.outputFactors) {
+        return .init(inputFactors: f.inputFactors, outputFactors: f.outputFactors) {
             x in f.applied(to: x) * r
         }
     }
     
     public static func ⊗ (f: AbstractTensorAlgebraHom<R>, g: AbstractTensorAlgebraHom<R>) -> AbstractTensorAlgebraHom<R> {
-        return AbstractTensorAlgebraHom.linearlyExtend(inputFactors: f.inputFactors + g.inputFactors, outputFactors: f.outputFactors + g.outputFactors) {
+        return .linearlyExtend(inputFactors: f.inputFactors + g.inputFactors, outputFactors: f.outputFactors + g.outputFactors) {
             (x: T<AbstractGenerator>) in
             let x1 = T(x.factors[0 ..< f.inputFactors])
             let x2 = T(x.factors[f.inputFactors ..< x.factors.count])
@@ -164,7 +176,7 @@ public struct AbstractTensorAlgebraHom<R: Ring>: ModuleHomType {
     
     public func composed(with f: AbstractTensorAlgebraHom<R>) -> AbstractTensorAlgebraHom<R> {
         assert(f.outputFactors == self.inputFactors)
-        return AbstractTensorAlgebraHom(inputFactors: f.inputFactors, outputFactors: self.outputFactors) {
+        return .init(inputFactors: f.inputFactors, outputFactors: self.outputFactors) {
             x in self.applied( to: f.applied(to: x) )
         }
     }
