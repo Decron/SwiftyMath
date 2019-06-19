@@ -88,16 +88,17 @@ public struct Matrix<n: SizeType, m: SizeType, R: Ring>: SetType {
         return ColVector(impl.submatrix(0 ..< rows, j ..< j + 1))
     }
     
-    public var grid: [R] {
-        return impl.grid
-    }
-    
     public var nonZeroComponents: [MatrixComponent<R>] {
-        return impl.components
+        fatalError()
+//        return impl.components
     }
     
     public func mapNonZeroComponents<R2>(_ f: (R) -> R2) -> Matrix<n, m, R2> {
         return Matrix<n, m, R2>(impl.mapComponents(f))
+    }
+    
+    func generateGrid() -> [R] {
+        return impl.generateGrid()
     }
     
     public var density: Double {
@@ -109,27 +110,11 @@ public struct Matrix<n: SizeType, m: SizeType, R: Ring>: SetType {
     }
     
     public var description: String {
-        return "[" + (0 ..< rows).map({ i in
-            return (0 ..< cols).map({ j in
-                return "\(self[i, j])"
-            }).joined(separator: ", ")
-        }).joined(separator: "; ") + "]"
+        return impl.description
     }
     
     public var detailDescription: String {
-        if (rows, cols) == (0, 0) {
-            return "[]"
-        } else if rows == 0 {
-            return "[" + String(repeating: "\t,", count: cols - 1) + "\t]"
-        } else if cols == 0 {
-            return "[" + String(repeating: "\t;", count: rows - 1) + "\t]"
-        } else {
-            return "[\t" + (0 ..< rows).map({ i in
-                return (0 ..< cols).map({ j in
-                    return "\(self[i, j])"
-                }).joined(separator: ",\t")
-            }).joined(separator: "\n\t") + "]"
-        }
+        return impl.detailDescription
     }
     
     public static var symbol: String {

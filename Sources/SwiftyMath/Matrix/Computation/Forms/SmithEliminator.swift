@@ -10,6 +10,7 @@ import Foundation
 
 internal final class SmithEliminator<R: EuclideanRing>: MatrixEliminator<R> {
     var targetIndex = 0
+    var done = false
     
     override var resultType: MatrixEliminationResultImpl<R>.Type {
         return DiagonalEliminationResult.self
@@ -20,14 +21,15 @@ internal final class SmithEliminator<R: EuclideanRing>: MatrixEliminator<R> {
     }
     
     override func isDone() -> Bool {
-        return targetIndex >= target.table.count
+        return done || targetIndex >= min(rows, cols)
     }
     
     @_specialize(where R == ComputationSpecializedRing)
     override func iteration() {
         let diagonal = targetDiagonal()
         guard let pivot = diagonal.min(by: {$0.1.eucDegree < $1.1.eucDegree}) else {
-            fatalError()
+            done = true
+            return
         }
         
         let i0 = pivot.0
@@ -79,6 +81,12 @@ internal final class SmithEliminator<R: EuclideanRing>: MatrixEliminator<R> {
     }
     
     private func targetDiagonal() -> [(Int, R)] {
-        return (targetIndex ..< target.table.keys.count).map{ target.table[$0]!.first! }
+        return (targetIndex ..< min(rows, cols)).compactMap { i in
+            if let v = target.heads[i]?.pointee.value {
+                return (i, v)
+            } else {
+                return nil
+            }
+        }
     }
 }

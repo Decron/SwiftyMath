@@ -14,11 +14,12 @@ internal final class DiagonalEliminator<R: EuclideanRing>: MatrixEliminator<R> {
     }
     
     override func isDone() -> Bool {
-        let n = target.table.keys.count
-        return target.table.allSatisfy{ (i, list) in
-            i < n && (list.count == 1)
-                  && list.first!.0 == i
-                  && list.first!.1.normalizeUnit == .identity
+        return target.heads.enumerated().allSatisfy{ (i, head) in
+            if let c = head?.pointee {
+                return c.index == i && c.value.isNormalized && !c.hasNext
+            } else {
+                return true
+            }
         }
     }
     
@@ -35,11 +36,11 @@ internal final class DiagonalEliminator<R: EuclideanRing>: MatrixEliminator<R> {
 
 internal final class DiagonalEliminationResult<R: EuclideanRing>: MatrixEliminationResultImpl<R> {
     override func _rank() -> Int {
-        return result.table.count
+        return result.heads.count{ $0 != nil }
     }
     
     override func _diagonal() -> [R] {
-        return (0 ..< rank).map{ i in result.table[i]!.first!.1 }
+        return result.heads.map{ p in p?.pointee.value ?? .zero }
     }
     
     override func _determinant() -> R {

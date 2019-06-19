@@ -17,11 +17,11 @@ internal final class RowEchelonEliminator<R: EuclideanRing>: MatrixEliminator<R>
     }
     
     override func prepare() {
-        target.switchAlignment(.Rows)
+        target.switchAlignment(.horizontal)
     }
     
     override func isDone() -> Bool {
-        return targetRow >= target.table.count || targetCol >= cols
+        return targetRow >= rows || targetCol >= cols
     }
     
     @_specialize(where R == ComputationSpecializedRing)
@@ -71,23 +71,24 @@ internal final class RowEchelonEliminator<R: EuclideanRing>: MatrixEliminator<R>
     
     @_specialize(where R == ComputationSpecializedRing)
     private func targetColElements() -> [(Int, R)] {
-        // Take (i, a)'s from table = [ i : [ (j, a) ] ]
-        // where (i >= targetRow && j == targetCol)
-        return target.table.compactMap{ (i, list) -> (Int, R)? in
-            let (j, a) = list.first!
-            return (i >= targetRow && j == targetCol) ? (i, a) : nil
-        }.sorted{ (i, _) in i}
+        // Take (i, a)'s from table = [ i : [ (j, a) ] ] where (i >= targetRow && j == targetCol)
+        return (targetRow ..< rows).compactMap{ i -> (Int, R)? in
+            guard let c = target.heads[i]?.pointee, c.index == targetCol else {
+                return nil
+            }
+            return (i, c.value)
+        }
     }
     
     @_specialize(where R == ComputationSpecializedRing)
     private func findPivot(in candidates: [(Int, R)]) -> (Int, R)? {
-        return candidates.min { $0.1.eucDegree < $1.1.eucDegree }
+        return candidates.first { $0.1.isInvertible } ?? candidates.min { $0.1.eucDegree < $1.1.eucDegree }
     }
 }
 
 internal final class RowEchelonEliminationResult<R: EuclideanRing>: MatrixEliminationResultImpl<R> {
     override func _rank() -> Int {
-        return result.table.count
+        return result.heads.count{ $0 != nil }
     }
 }
 

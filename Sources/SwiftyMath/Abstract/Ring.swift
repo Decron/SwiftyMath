@@ -22,6 +22,10 @@ public extension Ring {
         return normalizeUnit * self
     }
     
+    var isNormalized: Bool {
+        return normalizeUnit == .identity
+    }
+    
     func pow(_ n: Int) -> Self {
         if n >= 0 {
             return (0 ..< n).reduce(.identity){ (res, _) in self * res }

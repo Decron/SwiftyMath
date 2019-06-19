@@ -133,7 +133,7 @@ class MatrixEliminationTests: XCTestCase {
 
         XCTAssertEqual(I.rows, 2)
         XCTAssertEqual(I.cols, 1)
-        XCTAssertEqual(I.grid, [2, 2])
+        XCTAssertEqual(I.generateGrid(), [2, 2])
 
         let T = E.imageTransitionMatrix
         XCTAssertEqual(T * I, DMatrix(rows: 1, cols: 1, grid: [2]))

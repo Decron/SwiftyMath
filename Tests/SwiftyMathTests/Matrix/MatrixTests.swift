@@ -15,6 +15,11 @@ class MatrixTests: XCTestCase {
     typealias C = MatrixComponent<R>
     typealias M = Matrix2<R>
     
+    func testInit() {
+        let a = M(1,2,3,4)
+        XCTAssertEqual(a.generateGrid(), [1,2,3,4])
+    }
+    
     func testEquality() {
         let a = M(1,2,3,4)
         let b = M(1,2,3,4)
@@ -44,17 +49,26 @@ class MatrixTests: XCTestCase {
         XCTAssertEqual(a[0, 1], 2)
         XCTAssertEqual(a[1, 0], 0)
         XCTAssertEqual(a[1, 1], 4)
+        
+        a.impl.switchAlignment(.vertical)
+        XCTAssertEqual(a[0, 0], 1)
+        XCTAssertEqual(a[0, 1], 2)
+        XCTAssertEqual(a[1, 0], 0)
+        XCTAssertEqual(a[1, 1], 4)
     }
     
     func testSubscriptSet() {
         var a = M(1,2,0,4)
         a[0, 0] = 0
-        a[0, 1] = 0
+        a[0, 1] = -1
         a[1, 1] = 2
-        XCTAssertEqual(a[0, 0], 0)
-        XCTAssertEqual(a[0, 1], 0)
-        XCTAssertEqual(a[1, 0], 0)
-        XCTAssertEqual(a[1, 1], 2)
+        XCTAssertEqual(a.generateGrid(), [0, -1, 0, 2])
+        
+        a.impl.switchAlignment(.vertical)
+        a[0, 1] = 0
+        a[1, 0] = 3
+        a[1, 1] = 4
+        XCTAssertEqual(a.generateGrid(), [0, 0, 3, 4])
     }
     
     func testCopyOnMutate() {
@@ -63,8 +77,8 @@ class MatrixTests: XCTestCase {
         
         b[0, 0] = 0
         
-        XCTAssertEqual(a[0, 0], 1)
-        XCTAssertEqual(b[0, 0], 0)
+        XCTAssertEqual(a.generateGrid(), [1, 2, 0, 4])
+        XCTAssertEqual(b.generateGrid(), [0, 2, 0, 4])
     }
     
     func testSum() {
@@ -158,4 +172,5 @@ class MatrixTests: XCTestCase {
         let b = try! JSONDecoder().decode(M.self, from: d)
         XCTAssertEqual(a, b)
     }
+    
 }

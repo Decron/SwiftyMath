@@ -20,7 +20,7 @@ class MatrixImplTests: XCTestCase {
     }
     
     private func M22c(_ xs: R...) -> MatrixImpl<R> {
-        return MatrixImpl(rows: 2, cols: 2, align: .Cols, grid: xs)
+        return MatrixImpl(rows: 2, cols: 2, align: .vertical, grid: xs)
     }
     
     private func M12(_ xs: R...) -> MatrixImpl<R> {
@@ -37,13 +37,13 @@ class MatrixImplTests: XCTestCase {
     
     public func testSwitchFromRow() {
         let a = M22(1,2,3,4)
-        a.switchAlignment(.Cols)
+        a.switchAlignment(.vertical)
         XCTAssertEqual(a, M22(1,2,3,4))
     }
     
     public func testSwitchFromCol() {
         let a = M22c(1,2,3,4)
-        a.switchAlignment(.Rows)
+        a.switchAlignment(.horizontal)
         XCTAssertEqual(a, M22(1,2,3,4))
     }
     
@@ -93,49 +93,5 @@ class MatrixImplTests: XCTestCase {
         let a = M22(1,2,3,4)
         a.swapCols(0, 1)
         XCTAssertEqual(a, M22(2,1,4,3))
-    }
-    
-    public func testSubmatrix() {
-        let a = M22(1,2,3,4)
-        
-        XCTAssertEqual(a.submatrix(rowRange: 0 ..< 1), M12(1,2))
-        XCTAssertEqual(a.submatrix(rowRange: 1 ..< 2), M12(3,4))
-        XCTAssertEqual(a.submatrix(rowRange: 0 ..< 2), a)
-        
-        XCTAssertEqual(a.submatrix(colRange: 0 ..< 1), M21(1,3))
-        XCTAssertEqual(a.submatrix(colRange: 1 ..< 2), M21(2,4))
-        XCTAssertEqual(a.submatrix(colRange: 0 ..< 2), a)
-
-        XCTAssertEqual(a.submatrix(0 ..< 1, 0 ..< 1), M11(1))
-        XCTAssertEqual(a.submatrix(0 ..< 2, 1 ..< 2), M21(2, 4))
-    }
-
-    public func testSubmatrixC() {
-        let a = M22c(1,2,3,4)
-        
-        XCTAssertEqual(a.submatrix(rowRange: 0 ..< 1), M12(1,2))
-        XCTAssertEqual(a.submatrix(rowRange: 1 ..< 2), M12(3,4))
-        XCTAssertEqual(a.submatrix(rowRange: 0 ..< 2), a)
-        
-        XCTAssertEqual(a.submatrix(colRange: 0 ..< 1), M21(1,3))
-        XCTAssertEqual(a.submatrix(colRange: 1 ..< 2), M21(2,4))
-        XCTAssertEqual(a.submatrix(colRange: 0 ..< 2), a)
-        
-        XCTAssertEqual(a.submatrix(0 ..< 1, 0 ..< 1), M11(1))
-        XCTAssertEqual(a.submatrix(0 ..< 2, 1 ..< 2), M21(2, 4))
-    }
-    
-    public func testEncoding_dense() {
-        let a = M22(1,2,3,4) // dense
-        let d = try! JSONEncoder().encode(a)
-        let b = try! JSONDecoder().decode(MatrixImpl<R>.self, from: d)
-        XCTAssertEqual(a, b)
-    }
-    
-    public func testEncoding_sparse() {
-        let a = M22(0,2,0,0) // sparse
-        let d = try! JSONEncoder().encode(a)
-        let b = try! JSONDecoder().decode(MatrixImpl<R>.self, from: d)
-        XCTAssertEqual(a, b)
     }
 }

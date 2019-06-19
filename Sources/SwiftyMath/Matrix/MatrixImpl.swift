@@ -8,142 +8,207 @@
 
 import Foundation
 
+private var _debug: Bool = false
+
 internal typealias ComputationSpecializedRing = 𝐙
 
 internal final class MatrixImpl<R: Ring>: Hashable, CustomStringConvertible {
-    typealias Component = MatrixComponent<R>
-    typealias Table =  [Int : [(Int, R)]]
-    
     enum Alignment: String, Codable {
-        case Rows, Cols
+        case horizontal, vertical
+        var isHorizontal: Bool {
+            return self == .horizontal
+        }
+    }
+    
+    struct LinkedComponent {
+        typealias Pointer = UnsafeMutablePointer<LinkedComponent>
+        
+        let index: Int
+        var value: R
+        var hasNext: Bool
+        
+        init(_ index: Int, _ value: R) {
+            self.index = index
+            self.value = value
+            self.hasNext = false
+        }
     }
     
     var rows: Int
     var cols: Int
-    
     var align: Alignment
-    var table: Table
+    var heads: [LinkedComponent.Pointer?] // pointer to the first element of the rows/cols
     
-    private init(_ rows: Int, _ cols: Int, _ align: Alignment, _ table: Table) {
-        if _isDebugAssertConfiguration() {
-            assert(table.values.allSatisfy{ !$0.isEmpty })
-            assert(table.values.allSatisfy{ $0.allSatisfy{ $0.1 != .zero }})
-            
-            switch align {
-            case .Rows:
-                assert(table.keys.allSatisfy{ (0 ..< rows).contains($0) })
-                assert(table.values.allSatisfy{ $0.allSatisfy{ (0 ..< cols).contains($0.0) } })
-                assert(table.values.allSatisfy{ $0.map{ $0.0 } == $0.map{ $0.0 }.unique().sorted() })
-            case .Cols:
-                assert(table.keys.allSatisfy{ (0 ..< cols).contains($0) })
-                assert(table.values.allSatisfy{ $0.allSatisfy{ (0 ..< rows).contains($0.0) } })
-                assert(table.values.allSatisfy{ $0.map{ $0.0 } == $0.map{ $0.0 }.unique().sorted() })
-            }
-        }
-        
+    private let bufferLength: Int
+    private var bufferHeads: [LinkedComponent.Pointer]
+    private var currentPtr: LinkedComponent.Pointer
+    private var currentIdx: Int
+    private var prevAppend: LinkedComponent.Pointer?
+    
+    convenience init(rows: Int, cols: Int, align: Alignment = .horizontal) {
+        self.init(rows: rows, cols: cols, align: align, components: [])
+    }
+    
+    init<S: Sequence>(rows: Int, cols: Int, align: Alignment = .horizontal, components: S) where S.Element == MatrixComponent<R> {
         self.rows = rows
         self.cols = cols
         self.align = align
-        self.table = table
+        self.heads = []
+        
+        self.bufferLength = max(rows, cols) * 10 // TODO
+        self.bufferHeads = []
+        
+        let dummy = LinkedComponent.Pointer.allocate(capacity: 1)
+        self.currentPtr = dummy
+        self.currentIdx = 0
+        
+        realign(align, components)
+        
+        dummy.deallocate()
     }
     
-    convenience init(rows: Int, cols: Int, align: Alignment = .Rows, grid: [R]) {
-        let components = grid.enumerated().compactMap{ (k, a) -> Component? in
-            (a != .zero) ? MatrixComponent(k / cols, k % cols, a) : nil
+    deinit {
+        deallocateBuffers()
+    }
+    
+    private func allocateBuffer() {
+        let p = LinkedComponent.Pointer.allocate(capacity: bufferLength)
+        bufferHeads.append(p)
+        currentPtr = p
+        currentIdx = 0
+        log("allocate \(bufferLength) at \(currentPtr)")
+    }
+    
+    private func assureBuffer(_ length: Int) {
+        if currentIdx + length >= bufferLength {
+            allocateBuffer()
         }
-        self.init(rows: rows, cols: cols, align: align, components: components)
     }
     
-    convenience init(rows: Int, cols: Int, align: Alignment = .Rows, generator g: (Int, Int) -> R) {
-        let components = (0 ..< rows).flatMap { i -> [Component] in
-            (0 ..< cols).compactMap { j -> Component? in
-                let a = g(i, j)
-                return (a != .zero) ? Component(i, j, a) : nil
+    private func realign<S: Sequence>(_ align: Alignment, _ components: S) where S.Element == MatrixComponent<R> {
+        // MEMO this must be done first, since `components` may internally point to allocated memories.
+        let group = components.group{ align.isHorizontal ? $0.row : $0.col }
+        
+        deallocateBuffers()
+        allocateBuffer()
+        
+        heads = Array(repeating: nil, count: align.isHorizontal ? rows : cols)
+        
+        for (i, list) in group {
+            initializeRow(i, list.count)
+            
+            for c in list {
+                let j = (align.isHorizontal) ? c.col : c.row
+                append(i, j, c.value)
             }
+            
+            finalizeRow(i)
         }
-        self.init(rows: rows, cols: cols, align: align, components: components)
+        self.align = align
     }
     
-    convenience init<S: Sequence>(rows: Int, cols: Int, align: Alignment = .Rows, components: S) where S.Element == Component {
-        self.init(rows, cols, align, MatrixImpl.generateTable(align, components))
+    private func initializeRow(_ i: Int, _ length: Int) {
+        assert(prevAppend == nil)
+        
+        heads[i] = nil
+        assureBuffer(length)
     }
     
-    static func generateTable<S: Sequence>(_ align: Alignment, _ components: S) -> Table where S.Element == Component {
-        let filtered = components.filter{ $0.value != .zero }
-        switch align {
-        case .Rows:
-            return filtered.group{ c in c.row }.mapValues{ l in l.sorted{ c in c.col }.map{ c in (c.col, c.value) } }
-        case .Cols:
-            return filtered.group{ c in c.col }.mapValues{ l in l.sorted{ c in c.row }.map{ c in (c.row, c.value) } }
+    @discardableResult
+    private func append(_ i: Int, _ j: Int, _ value: R) -> LinkedComponent.Pointer? {
+        guard value != .zero else {
+            return nil
         }
+        
+        defer {
+            currentPtr += 1
+            currentIdx += 1
+            assert(currentIdx < bufferLength)
+        }
+        
+        prevAppend?.pointee.hasNext = true
+        
+        currentPtr.initialize(to: LinkedComponent(j, value))
+        if heads[i] == nil {
+            heads[i] = currentPtr
+        }
+        
+        prevAppend = currentPtr
+        
+        log("add: \(currentPtr): \((i, j, value))")
+        
+        return currentPtr
     }
     
-    subscript(i: Int, j: Int) -> R {
+    private func finalizeRow(_ i: Int) {
+        prevAppend = nil
+    }
+    
+    private func deallocateBuffers() {
+        for p in bufferHeads {
+            p.deinitialize(count: bufferLength)
+            p.deallocate()
+            log("deallocate \(bufferLength) at \(p)")
+        }
+        bufferHeads.removeAll()
+    }
+    
+    subscript(row: Int, col: Int) -> R {
         get {
-            switch align {
-            case .Rows: return table[i]?.binarySearch(j, { $0.0 } )?.element.1 ?? .zero
-            case .Cols: return table[j]?.binarySearch(i, { $0.0 } )?.element.1 ?? .zero
+            let (i, j) = align.isHorizontal ? (row, col) : (col, row)
+            var p = heads[i]
+            while p != nil {
+                let c = p!.pointee
+                if c.index == j {
+                    return c.value
+                } else if c.index > j || !c.hasNext {
+                    return .zero
+                }
+                proceed(&p)
             }
+            return .zero
         } set {
-            switch align {
-            case .Rows:
-                let row = MatrixImpl.mergeRows(table[i] ?? [], [(j, newValue - self[i, j])])
-                table[i] = row
-            case .Cols:
-                let col = MatrixImpl.mergeRows(table[j] ?? [], [(i, newValue - self[i, j])])
-                table[j] = col
-            }
+            let (i, j) = align.isHorizontal ? (row, col) : (col, row)
+            let p = LinkedComponent.Pointer.allocate(capacity: 1)
+            p.initialize(to: LinkedComponent(j, newValue - self[row, col]))
+            mergeRows(i, heads[i], p, (+))
+            p.deallocate()
         }
     }
     
     func copy() -> MatrixImpl<R> {
-        return MatrixImpl(rows, cols, align, table)
+        return mapComponents{ $0 }
     }
     
     func switchAlignment(_ align: Alignment) {
-        if self.align == align {
-            return
-        }
-        
-        let comps = components
-        
-        self.align = align
-        self.table = MatrixImpl.generateTable(align, comps)
-    }
-    
-    var isZero: Bool {
-        return table.isEmpty
-    }
-    
-    var isDiagonal: Bool {
-        return table.allSatisfy { (i, list) in
-            (list.count == 0) || (list.count == 1) && list.first!.0 == i
+        if self.align != align {
+            self.realign(align, IteratorSequence(iterator()))
         }
     }
     
-    var isIdentity: Bool {
-        return rows == cols && table.allSatisfy { (i, list) in
-            (list.count == 1) && list.first! == (i, .identity)
+    func iterator() -> Iterator {
+        return Iterator(align, heads)
+    }
+    
+    func rowIterator(_ i: Int) -> RowIterator {
+        switchAlignment(.horizontal)
+        return RowIterator(align, i, heads[i])
+    }
+    
+    func colIterator(_ i: Int) -> RowIterator {
+        switchAlignment(.vertical)
+        return RowIterator(align, i, heads[i])
+    }
+    
+    var allComponents: [MatrixComponent<R>] {
+        return IteratorSequence(iterator()).sorted{ (c1, c2) in
+            (c1.row < c2.row) || (c1.row == c2.row && c1.col < c2.col)
         }
     }
     
-    static func identity(size n: Int, align: Alignment) -> MatrixImpl<R> {
-        let components = (0 ..< n).map{ i in MatrixComponent(i, i, R.identity)}
-        return MatrixImpl(rows: n, cols: n, align: align, components: components)
-    }
-    
-    var components: [Component] {
-        switch align {
-        case .Rows:
-            return table.flatMap{ (i, list) in list.map{(j, a) in MatrixComponent(i, j, a)} }
-        case .Cols:
-            return table.flatMap{ (j, list) in list.map{(i, a) in MatrixComponent(i, j, a)} }
-        }
-    }
-    
-    var grid: [R] {
+    func generateGrid() -> [R] {
         var grid = Array(repeating: R.zero, count: rows * cols)
-        for c in components {
+        for c in allComponents {
             grid[c.row * cols + c.col] = c.value
         }
         return grid
@@ -152,157 +217,43 @@ internal final class MatrixImpl<R: Ring>: Hashable, CustomStringConvertible {
     @discardableResult
     func transpose() -> MatrixImpl<R> {
         (rows, cols) = (cols, rows)
-        align = (align == .Rows) ? .Cols : .Rows
+        align = (align.isHorizontal) ? .vertical : .horizontal
         return self
     }
     
-    var trace: R {
-        assert(rows == cols)
-        return table.compactMap { (i, list) -> R? in
-            list.first{ $0.0 == i }.map{ $0.1 }
-        }.sumAll()
-    }
-    
-    var determinant: R {
-        assert(rows == cols)
-        if rows == 0 {
-            return .identity
-        }
-        
-        guard let row = table[0] else {
-            return .zero
-        }
-        
-        return row.sum{ (j, a) in
-            let minor = (align == .Rows)
-                ? submatrix({ $0 != 0 }, { $0 != j })
-                : submatrix({ $0 != j }, { $0 != 0 })
-            return R(from: (-1).pow(j)) * a * minor.determinant
-        }
-    }
-    
-    func cofactor(_ i: Int, _ j: Int) -> R {
-        assert(rows == cols)
-        let ε = R(from: (-1).pow(i + j))
-        let d = submatrix({ $0 != i }, { $0 != j }).determinant
-        return ε * d
-    }
-    
-    var inverse: MatrixImpl<R>? {
-        assert(rows == cols)
-        
-        guard let dInv = determinant.inverse else {
-            return nil
-        }
-        return dInv * MatrixImpl(rows: rows, cols: cols) { (i, j) in self.cofactor(j, i) }
-    }
-    
     func mapComponents<R2>(_ f: (R) -> R2) -> MatrixImpl<R2> {
-        typealias M = MatrixImpl<R2>
-        let mapped = table.mapValues { list in
-            list.map { (i, r) in (i, f(r)) }
-                .exclude { (_, r) in r == .zero }
-            }.exclude{ (_, list) in list.isEmpty }
-        let a = (align == .Rows) ? M.Alignment.Rows : M.Alignment.Cols
-        return M(rows, cols, a, mapped)
-    }
-    
-    func submatrix(rowRange: CountableRange<Int>) -> MatrixImpl<R> {
-        return submatrix(rowRange, 0 ..< cols)
-    }
-    
-    func submatrix(colRange: CountableRange<Int>) -> MatrixImpl<R> {
-        return submatrix(0 ..< rows, colRange)
-    }
-    
-    func submatrix(_ rowRange: CountableRange<Int>, _ colRange: CountableRange<Int>) -> MatrixImpl<R> {
-        assert(0 <= rowRange.lowerBound && rowRange.upperBound <= rows)
-        assert(0 <= colRange.lowerBound && colRange.upperBound <= cols)
-
-        return submatrix({i in rowRange.contains(i)}, {j in colRange.contains(j)})
-    }
-    
-    @_specialize(where R == ComputationSpecializedRing)
-    func submatrix(_ rowCond: (Int) -> Bool, _ colCond: (Int) -> Bool) -> MatrixImpl<R> {
-        let (sRows, sCols, iList, jList): (Int, Int, [Int], [Int])
-        
-        switch align {
-        case .Rows:
-            (iList, jList) = ((0 ..< rows).filter(rowCond), (0 ..< cols).filter(colCond))
-            (sRows, sCols) = (iList.count, jList.count)
-        case .Cols:
-            (iList, jList) = ((0 ..< cols).filter(colCond), (0 ..< rows).filter(rowCond))
-            (sRows, sCols) = (jList.count, iList.count)
-        }
-        
-        let subTable = table.compactMap{ (i, list) -> (Int, [(Int, R)])? in
-            guard let i1 = iList.binarySearch(i) else {
-                return nil
+        let res = MatrixImpl<R2>(rows: rows, cols: cols, align: align.isHorizontal ? .horizontal : .vertical, components: [])
+        for (i, head) in heads.enumerated() where head != nil {
+            res.initializeRow(i, cols)
+            var p = head
+            while let c = p?.pointee {
+                res.append(i, c.index, f(c.value))
+                proceed(&p)
             }
-            let subList = list.compactMap{ (j, a) -> (Int, R)? in
-                guard let j1 = jList.binarySearch(j) else {
-                    return nil
-                }
-                return (j1, a)
-            }
-            return !subList.isEmpty ? (i1, subList) : nil
+            res.finalizeRow(i)
         }
-        
-        return MatrixImpl(sRows, sCols, align, Dictionary(pairs: subTable))
+        return res
     }
     
-    func concatDiagonally(_ B: MatrixImpl<R>) -> MatrixImpl<R> {
-        let A = self
-        A.switchAlignment(.Rows)
-        B.switchAlignment(.Rows)
-        
-        let table = A.table + B.table.mapPairs{ (i, list) in (i + A.rows, list.map{ (j, r) in (j + A.cols, r) })}
-        return MatrixImpl<R>(A.rows + B.rows, A.cols + B.cols, .Rows, table)
-    }
-    
-    func concatHorizontally(_ B: MatrixImpl<R>) -> MatrixImpl<R> {
-        let A = self
-        assert(A.rows == B.rows)
-        
-        A.switchAlignment(.Cols)
-        B.switchAlignment(.Cols)
-        
-        let table = A.table + B.table.mapKeys{ j in j + A.cols }
-        return MatrixImpl(A.rows, A.cols + B.cols, .Cols, table)
-    }
-    
-    func concatVertically(_ B: MatrixImpl<R>) -> MatrixImpl<R> {
-        let A = self
-        assert(A.cols == B.cols)
-        
-        A.switchAlignment(.Rows)
-        B.switchAlignment(.Rows)
-        
-        let table = A.table + B.table.mapKeys{ i in i + A.rows }
-        return MatrixImpl(A.rows + B.rows, A.cols, .Rows, table)
-    }
-    
-    @_specialize(where R == ComputationSpecializedRing)
     static func ==(a: MatrixImpl, b: MatrixImpl) -> Bool {
         if (a.rows, a.cols) != (b.rows, b.cols) {
             return false
         }
-        let (z1, z2) = (a.components, b.components)
-        return z1.count == z2.count && z1.allSatisfy{ (i, j, x) in b[i, j] == x }
+        let aComps = a.allComponents
+        let bComps = b.allComponents
+        return (aComps.count == bComps.count) && zip(aComps, bComps).allSatisfy{ $0 == $1 }
     }
     
     @_specialize(where R == ComputationSpecializedRing)
     static func +(a: MatrixImpl, b: MatrixImpl) -> MatrixImpl<R> {
         assert( (a.rows, a.cols) == (b.rows, b.cols) )
-        
         b.switchAlignment(a.align)
         
-        let iList = Set(a.table.keys).union(b.table.keys)
-        let table = iList.compactMap { i in
-            MatrixImpl.mergeRows(a.table[i] ?? [], b.table[i] ?? []).map{ (i, $0) }
+        let c = MatrixImpl(rows: a.rows, cols: a.cols, align: a.align, components: [])
+        for i in 0 ..< a.rows {
+            c.mergeRows(i, a.heads[i], b.heads[i], (+))
         }
-        
-        return MatrixImpl(a.rows, a.cols, a.align, Dictionary(pairs: table))
+        return c
     }
     
     @_specialize(where R == ComputationSpecializedRing)
@@ -324,77 +275,103 @@ internal final class MatrixImpl<R: Ring>: Hashable, CustomStringConvertible {
     static func *(a: MatrixImpl, b: MatrixImpl) -> MatrixImpl<R> {
         assert(a.cols == b.rows)
         
-        // TODO support .Cols
+        a.switchAlignment(.horizontal)
+        b.switchAlignment(.vertical)
         
-        a.switchAlignment(.Rows)
-        b.switchAlignment(.Rows)
+        let c = MatrixImpl(rows: a.rows, cols: b.cols, align: .horizontal, components: [])
         
-        let table = a.table.compactMap { (i, list1) -> (Int, [(Int, R)])? in
-            
-            //       k              j
-            //       v            | v        |
-            //  i>|  x    *  |  k>| y   *    |
-            //                    |          |
-            //                    | * *    * |
-            //                    |          |
-            //
-            //                         ↓
-            //
-            //                  i>| * * *  * |
-            
-            var tmp: [Int: R] = [:]
-            
-            for (k, x) in list1 where b.table[k] != nil {
-                let list2 = b.table[k]!
-                for (j, y) in list2 {
-                    tmp[j] = (tmp[j] ?? .zero) + x * y
+        let I = (0 ..< a.rows).filter { i in a.heads[i] != nil }
+        let J = (0 ..< b.cols).filter { j in b.heads[j] != nil }
+        
+        for i in I {
+            c.initializeRow(i, c.cols)
+            for j in J {
+                var r = R.zero
+                var (p, q) = (a.heads[i], b.heads[j])
+                while let x = p?.pointee, let y = q?.pointee {
+                    if x.index == y.index {
+                        r = r + x.value * y.value
+                        proceed(&p)
+                        proceed(&q)
+                    } else if x.index < y.index {
+                        proceed(&p)
+                    } else if x.index > y.index {
+                        proceed(&q)
+                    }
                 }
+                c.append(i, j, r)
             }
-            
-            let row = tmp.filter{ $0.value != .zero }.map{ ($0.key, $0.value ) }.sorted{ $0.0 }
-            return !row.isEmpty ? (i, row) : nil
+            c.finalizeRow(i)
         }
         
-        return MatrixImpl(a.rows, b.cols, a.align, Dictionary(pairs: table))
-    }
-
-    @_specialize(where R == ComputationSpecializedRing)
-    func multiplyRow(at i0: Int, by r: R) {
-        switchAlignment(.Rows)
-        
-        guard var row = table[i0] else {
-            return
-        }
-        
-        let n = row.count
-        var p = UnsafeMutablePointer(&row)
-        
-        for _ in 0 ..< n {
-            let (j, a) = p.pointee
-            p.pointee = (j, r * a)
-            p += 1
-        }
-        
-        row = row.filter{ $0.1 != .zero }
-        table[i0] = !row.isEmpty ? row : nil
+        return c
     }
     
     @_specialize(where R == ComputationSpecializedRing)
-    func addRow(at i0: Int, to i1: Int, multipliedBy r: R = .identity) {
-        switchAlignment(.Rows)
+    func multiplyRow(at i0: Int, by r: R) {
+        switchAlignment(.horizontal)
         
-        let row0 = table[i0]?.map{ (j, a) in (j, r * a) } ?? []
-        let row1 = table[i1] ?? []
+        guard R.self == Int.self || R.isField else {
+            fatalError()
+        }
         
-        table[i1] = MatrixImpl.mergeRows(row0, row1)
+        var p = heads[i0]
+        while let a = p?.pointee.value {
+            p!.pointee.value = r * a
+            proceed(&p)
+        }
+    }
+    
+    @_specialize(where R == ComputationSpecializedRing)
+    func addRow(at i: Int, to j: Int, multipliedBy r: R = .identity) {
+        switchAlignment(.horizontal)
+        mergeRows(j, heads[i], heads[j], { r * $0 + $1 })
+    }
+    
+    @_specialize(where R == ComputationSpecializedRing)
+    private func mergeRows(_ i: Int, _ row1: LinkedComponent.Pointer?, _ row2: LinkedComponent.Pointer?, _ f: (R, R) -> R) {
+        initializeRow(i, align.isHorizontal ? cols : rows)
+        
+        var (p1, p2) = (row1, row2)
+        
+        while let e1 = p1?.pointee, let e2 = p2?.pointee {
+            let (j1, j2) = (e1.index, e2.index)
+            let (a1, a2) = (e1.value, e2.value)
+            if j1 == j2 {
+                append(i, j1, f(a1, a2))
+                proceed(&p1)
+                proceed(&p2)
+                
+            } else if j1 < j2 {
+                append(i, j1, f(a1, .zero))
+                proceed(&p1)
+                
+            } else if j1 > j2 {
+                append(i, j2, f(.zero, a2))
+                proceed(&p2)
+            }
+        }
+        
+        while let e1 = p1?.pointee {
+            let (j1, a1) = (e1.index, e1.value)
+            append(i, j1, f(a1, .zero))
+            proceed(&p1)
+        }
+        while let e2 = p2?.pointee {
+            let (j2, a2) = (e2.index, e2.value)
+            append(i, j2, f(.zero, a2))
+            proceed(&p2)
+        }
+        
+        finalizeRow(i)
     }
     
     func swapRows(_ i0: Int, _ i1: Int) {
-        switchAlignment(.Rows)
+        switchAlignment(.horizontal)
         
-        let r0 = table[i0]
-        table[i0] = table[i1]
-        table[i1] = r0
+        let p0 = heads[i0]
+        heads[i0] = heads[i1]
+        heads[i1] = p0
     }
     
     func multiplyCol(at j0: Int, by r: R) {
@@ -415,75 +392,244 @@ internal final class MatrixImpl<R: Ring>: Hashable, CustomStringConvertible {
         transpose()
     }
     
-    @_specialize(where R == ComputationSpecializedRing)
-    private static func mergeRows(_ row0: [(Int, R)], _ row1: [(Int, R)]) -> [(Int, R)]? {
-        switch (row0.isEmpty, row1.isEmpty) {
-        case (true,  true): return nil
-        case (false, true): return row0
-        case (true, false): return row1
-        default: ()
+    struct RowIterator: IteratorProtocol {
+        typealias Element = MatrixComponent<R>
+        let align: Alignment
+        var index: Int
+        var currentPtr: LinkedComponent.Pointer?
+        
+        init(_ align: Alignment, _ index: Int, _ head: LinkedComponent.Pointer?) {
+            self.align = align
+            self.index = index
+            self.currentPtr = head
         }
         
-        var result: [(Int, R)] = []
-        
-        let (n0, n1) = (row0.count, row1.count)
-        var (p0, p1) = (UnsafePointer(row0), UnsafePointer(row1))
-        var (k0, k1) = (0, 0) // counters
-        
-        while k0 < n0 && k1 < n1 {
-            let (j0, a0) = p0.pointee
-            let (j1, a1) = p1.pointee
+        mutating func next() -> MatrixComponent<R>? {
+            guard let current = currentPtr?.pointee else {
+                return nil
+            }
             
-            if j0 == j1 {
-                result.append((j0, a0 + a1))
-                
-                p0 += 1
-                p1 += 1
-                k0 += 1
-                k1 += 1
-                
-            } else if j0 < j1 {
-                result.append((j0, a0))
-                
-                p0 += 1
-                k0 += 1
-                
-            } else if j0 > j1 {
-                result.append( (j1, a1) )
-                
-                p1 += 1
-                k1 += 1
+            defer {
+                if current.hasNext {
+                    currentPtr = currentPtr! + 1
+                } else {
+                    currentPtr = nil
+                }
+            }
+            
+            return (align.isHorizontal)
+                ? (index, current.index, current.value)
+                : (current.index, index, current.value)
+        }
+    }
+    
+    struct Iterator: IteratorProtocol {
+        typealias Element = MatrixComponent<R>
+        let align: Alignment
+        let heads: [LinkedComponent.Pointer?]
+        var index: Int
+        var rowIterator: RowIterator?
+        
+        init(_ align: Alignment, _ heads: [LinkedComponent.Pointer?]) {
+            self.align = align
+            self.heads = heads
+            self.index = 0
+            self.rowIterator = nil
+        }
+        
+        mutating func next() -> MatrixComponent<R>? {
+            if rowIterator != nil {
+                if let next = rowIterator!.next() {
+                    return next
+                } else {
+                    rowIterator = nil
+                    index += 1
+                }
+            }
+            
+            while index < heads.count && heads[index] == nil {
+                index += 1
+            }
+
+            if index < heads.count {
+                rowIterator = RowIterator(align, index, heads[index])
+                return rowIterator?.next()
+            } else {
+                return nil
             }
         }
-        
-        for _ in k0 ..< n0 {
-            let (j0, a0) = p0.pointee
-            result.append((j0, a0))
-            
-            p0 += 1
-            k0 += 1
+    }
+    
+    private func log(_ s: @autoclosure () -> String) {
+        if _debug {
+            print(s())
         }
-        
-        for _ in k1 ..< n1 {
-            let (j1, a1) = p1.pointee
-            result.append((j1, a1))
-            
-            p1 += 1
-            k1 += 1
-        }
-        
-        result = result.filter{ $0.1 != .zero }
-        return !result.isEmpty ? result : nil
     }
     
     var hashValue: Int {
         return isZero ? 0 : 1 // TODO
     }
     
-    var description: String {
-        return "CMatrix<\(rows), \(cols)> [ " + table.flatMap { (i, list) in
-            list.map{ (j, a) in "\(a)" + Format.sub("\(align == .Rows ? (i, j) : (j, i) )") }
-        }.joined(separator: ", ") + " ]"
+    public var description: String {
+        let grid = generateGrid()
+        let res = (0 ..< rows).map { i -> String in
+            (0 ..< cols).map { j -> String in
+                grid[i * cols + j].description
+            }.joined(separator: ", ")
+        }.joined(separator: "; ")
+        return "[\(res)]"
+    }
+    
+    public var detailDescription: String {
+        if (rows, cols) == (0, 0) {
+            return "[]"
+        } else if rows == 0 {
+            return "[" + String(repeating: "\t,", count: cols - 1) + "\t]"
+        } else if cols == 0 {
+            return "[" + String(repeating: "\t;", count: rows - 1) + "\t]"
+        } else {
+            let grid = generateGrid()
+            let res = (0 ..< rows).map { i -> String in
+                (0 ..< cols).map { j -> String in
+                    grid[i * cols + j].description
+                }.joined(separator: ", ")
+            }.joined(separator: ",\n\t")
+            return "[\t\(res)]"
+        }
+    }
+}
+
+extension MatrixImpl {
+    convenience init(rows: Int, cols: Int, align: Alignment = .horizontal, grid: [R]) {
+        self.init(rows: rows, cols: cols, align: align) { (i, j) in
+            let k = i * cols + j
+            return grid.indices.contains(k) ? grid[k] : .zero
+        }
+    }
+    
+    convenience init(rows: Int, cols: Int, align: Alignment = .horizontal, generator g: (Int, Int) -> R) {
+        let components = (0 ..< rows * cols).compactMap { k -> MatrixComponent<R>? in
+            let (i, j) = (k / cols, k % cols)
+            let a = g(i, j)
+            return nilIfZero(a).map{ a in (i, j, a) }
+        }
+        self.init(rows: rows, cols: cols, align: align, components: components)
+    }
+    
+    var isZero: Bool {
+        return heads.allSatisfy{ $0 == nil }
+    }
+    
+    var isDiagonal: Bool {
+        fatalError()
+    }
+    
+    var isIdentity: Bool {
+        fatalError()
+    }
+    
+    static func identity(size n: Int, align: Alignment) -> MatrixImpl<R> {
+        let components = (0 ..< n).map{ i in MatrixComponent(i, i, R.identity)}
+        return MatrixImpl(rows: n, cols: n, align: align, components: components)
+    }
+    
+    var trace: R {
+        assert(rows == cols)
+        fatalError()
+    }
+    
+    var determinant: R {
+        assert(rows == cols)
+        if rows == 0 {
+            return .identity
+        }
+        
+        fatalError()
+        //        guard let row = table[0] else {
+        //            return .zero
+        //        }
+        //
+        //        return row.sum{ (j, a) in
+        //            let minor = (align == .horizontal)
+        //                ? submatrix({ $0 != 0 }, { $0 != j })
+        //                : submatrix({ $0 != j }, { $0 != 0 })
+        //            return R(from: (-1).pow(j)) * a * minor.determinant
+        //        }
+    }
+    
+    func cofactor(_ i: Int, _ j: Int) -> R {
+        fatalError()
+        
+        //        assert(rows == cols)
+        //        let ε = R(from: (-1).pow(i + j))
+        //        let d = submatrix({ $0 != i }, { $0 != j }).determinant
+        //        return ε * d
+    }
+    
+    var inverse: MatrixImpl<R>? {
+        assert(rows == cols)
+        
+        guard let dInv = determinant.inverse else {
+            return nil
+        }
+        return dInv * MatrixImpl(rows: rows, cols: cols) { (i, j) in self.cofactor(j, i) }
+    }
+    
+    func submatrix(rowRange: CountableRange<Int>) -> MatrixImpl<R> {
+        return submatrix(rowRange, 0 ..< cols)
+    }
+    
+    func submatrix(colRange: CountableRange<Int>) -> MatrixImpl<R> {
+        return submatrix(0 ..< rows, colRange)
+    }
+    
+    func submatrix(_ rowRange: CountableRange<Int>, _ colRange: CountableRange<Int>) -> MatrixImpl<R> {
+        assert(0 <= rowRange.lowerBound && rowRange.upperBound <= rows)
+        assert(0 <= colRange.lowerBound && colRange.upperBound <= cols)
+        
+        return submatrix({i in rowRange.contains(i)}, {j in colRange.contains(j)})
+    }
+    
+    @_specialize(where R == ComputationSpecializedRing)
+    func submatrix(_ rowCond: (Int) -> Bool, _ colCond: (Int) -> Bool) -> MatrixImpl<R> {
+        fatalError()
+        //        let (sRows, sCols, iList, jList): (Int, Int, [Int], [Int])
+        //
+        //        switch align {
+        //        case .horizontal:
+        //            (iList, jList) = ((0 ..< rows).filter(rowCond), (0 ..< cols).filter(colCond))
+        //            (sRows, sCols) = (iList.count, jList.count)
+        //        case .vertical:
+        //            (iList, jList) = ((0 ..< cols).filter(colCond), (0 ..< rows).filter(rowCond))
+        //            (sRows, sCols) = (jList.count, iList.count)
+        //        }
+        //
+        //        let subTable = table.compactMap{ (i, list) -> (Int, [(Int, R)])? in
+        //            guard let i1 = iList.binarySearch(i) else {
+        //                return nil
+        //            }
+        //            let subList = list.compactMap{ (j, a) -> (Int, R)? in
+        //                guard let j1 = jList.binarySearch(j) else {
+        //                    return nil
+        //                }
+        //                return (j1, a)
+        //            }
+        //            return !subList.isEmpty ? (i1, subList) : nil
+        //        }
+        //
+        //        return MatrixImpl(sRows, sCols, align, Dictionary(pairs: subTable))
+    }
+    
+    func concatDiagonally(_ B: MatrixImpl<R>) -> MatrixImpl<R> {
+        fatalError()
+    }
+    
+    func concatHorizontally(_ B: MatrixImpl<R>) -> MatrixImpl<R> {
+        fatalError()
+    }
+    
+    func concatVertically(_ B: MatrixImpl<R>) -> MatrixImpl<R> {
+        fatalError()
     }
 }
 
@@ -497,13 +643,26 @@ extension MatrixImpl: Codable where R: Codable {
         let rows = try c.decode(Int.self, forKey: .rows)
         let cols = try c.decode(Int.self, forKey: .cols)
         let grid = try c.decode([R].self, forKey: .grid)
-        self.init(rows: rows, cols: cols, align: .Rows, grid: grid)
+        self.init(rows: rows, cols: cols, align: .horizontal, grid: grid)
     }
     
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(rows, forKey: .rows)
         try c.encode(cols, forKey: .cols)
-        try c.encode(grid, forKey: .grid)
+        try c.encode(generateGrid(), forKey: .grid)
+    }
+}
+
+@inlinable
+func nilIfZero<R: Ring>(_ r: R?) -> R? {
+    return (r == .zero) ? nil : r
+}
+
+fileprivate func proceed<R>(_ p: inout MatrixImpl<R>.LinkedComponent.Pointer?) {
+    if let e = p?.pointee, e.hasNext {
+        p! += 1
+    } else {
+        p = nil
     }
 }

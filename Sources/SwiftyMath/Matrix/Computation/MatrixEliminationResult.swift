@@ -127,7 +127,7 @@ internal class MatrixEliminationResultImpl<R: EuclideanRing> {
     
     @_specialize(where R == ComputationSpecializedRing)
     final func _left() -> MatrixImpl<R> {
-        let P = MatrixImpl<R>.identity(size: result.rows, align: .Rows)
+        let P = MatrixImpl<R>.identity(size: result.rows, align: .horizontal)
         for s in rowOps {
             P.apply(s)
         }
@@ -137,8 +137,8 @@ internal class MatrixEliminationResultImpl<R: EuclideanRing> {
     @_specialize(where R == ComputationSpecializedRing)
     final func _leftInverse(restrictedToCols colRange: CountableRange<Int>? = nil) -> MatrixImpl<R> {
         let P = (colRange == nil)
-            ? MatrixImpl<R>.identity(size: result.rows, align: .Rows)
-            : MatrixImpl<R>.identity(size: result.rows, align: .Rows).submatrix(colRange: colRange!)
+            ? MatrixImpl<R>.identity(size: result.rows, align: .horizontal)
+            : MatrixImpl<R>.identity(size: result.rows, align: .horizontal).submatrix(colRange: colRange!)
         
         for s in rowOps.reversed() {
             P.apply(s.inverse)
@@ -149,7 +149,7 @@ internal class MatrixEliminationResultImpl<R: EuclideanRing> {
     
     @_specialize(where R == ComputationSpecializedRing)
     final func _right() -> MatrixImpl<R> {
-        let P = MatrixImpl<R>.identity(size: result.cols, align: .Cols)
+        let P = MatrixImpl<R>.identity(size: result.cols, align: .vertical)
         for s in colOps {
             P.apply(s)
         }
@@ -159,8 +159,8 @@ internal class MatrixEliminationResultImpl<R: EuclideanRing> {
     @_specialize(where R == ComputationSpecializedRing)
     final func _rightInverse(restrictedToRows rowRange: CountableRange<Int>? = nil) -> MatrixImpl<R> {
         let P = (rowRange == nil)
-            ? MatrixImpl<R>.identity(size: result.cols, align: .Cols)
-            : MatrixImpl<R>.identity(size: result.cols, align: .Cols).submatrix(rowRange: rowRange!)
+            ? MatrixImpl<R>.identity(size: result.cols, align: .vertical)
+            : MatrixImpl<R>.identity(size: result.cols, align: .vertical).submatrix(rowRange: rowRange!)
         
         for s in colOps.reversed() {
             P.apply(s.inverse)
