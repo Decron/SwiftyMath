@@ -8,8 +8,6 @@
 
 import Foundation
 
-private var _debug: Bool = false
-
 internal typealias ComputationSpecializedRing = 𝐙
 
 internal final class MatrixImpl<R: Ring>: Hashable, CustomStringConvertible {
@@ -22,7 +20,6 @@ internal final class MatrixImpl<R: Ring>: Hashable, CustomStringConvertible {
     
     struct LinkedComponent {
         typealias Pointer = UnsafeMutablePointer<LinkedComponent>
-        
         let index: Int
         var value: R
         var hasNext: Bool
@@ -39,11 +36,7 @@ internal final class MatrixImpl<R: Ring>: Hashable, CustomStringConvertible {
     var align: Alignment
     var heads: [LinkedComponent.Pointer?] // pointer to the first element of the rows/cols
     
-    private let bufferLength: Int
-    private var bufferHeads: [LinkedComponent.Pointer]
-    private var currentPtr: LinkedComponent.Pointer
-    private var currentIdx: Int
-    private var prevAppend: LinkedComponent.Pointer?
+    private let allocator: MemoryAllocator<LinkedComponent>
     
     convenience init(rows: Int, cols: Int, align: Alignment = .horizontal) {
         self.init(rows: rows, cols: cols, align: align, components: [])
@@ -54,103 +47,92 @@ internal final class MatrixImpl<R: Ring>: Hashable, CustomStringConvertible {
         self.cols = cols
         self.align = align
         self.heads = []
-        
-        self.bufferLength = max(rows, cols) * 10 // TODO
-        self.bufferHeads = []
-        
-        let dummy = LinkedComponent.Pointer.allocate(capacity: 1)
-        self.currentPtr = dummy
-        self.currentIdx = 0
+        self.allocator = MemoryAllocator(bufferLength: max(rows, cols) * 10)
         
         realign(align, components)
-        
-        dummy.deallocate()
-    }
-    
-    deinit {
-        deallocateBuffers()
-    }
-    
-    private func allocateBuffer() {
-        let p = LinkedComponent.Pointer.allocate(capacity: bufferLength)
-        bufferHeads.append(p)
-        currentPtr = p
-        currentIdx = 0
-        log("allocate \(bufferLength) at \(currentPtr)")
-    }
-    
-    private func assureBuffer(_ length: Int) {
-        if currentIdx + length >= bufferLength {
-            allocateBuffer()
-        }
     }
     
     private func realign<S: Sequence>(_ align: Alignment, _ components: S) where S.Element == MatrixComponent<R> {
         // MEMO this must be done first, since `components` may internally point to allocated memories.
         let group = components.group{ align.isHorizontal ? $0.row : $0.col }
         
-        deallocateBuffers()
-        allocateBuffer()
-        
+        allocator.deallocate()
         heads = Array(repeating: nil, count: align.isHorizontal ? rows : cols)
         
         for (i, list) in group {
-            initializeRow(i, list.count)
-            
-            for c in list {
-                let j = (align.isHorizontal) ? c.col : c.row
-                append(i, j, c.value)
+            generateRow(at: i, length: list.count) { append in
+                for c in list {
+                    let j = (align.isHorizontal) ? c.col : c.row
+                    append(j, c.value)
+                }
             }
-            
-            finalizeRow(i)
         }
         self.align = align
     }
     
-    private func initializeRow(_ i: Int, _ length: Int) {
-        assert(prevAppend == nil)
+    @discardableResult
+    private func generateRow(at i: Int?, length: Int, generator: ((Int, R) -> Void) -> Void) -> LinkedComponent.Pointer? {
+        var head: LinkedComponent.Pointer? = nil
+        var prev: LinkedComponent.Pointer? = nil
         
-        heads[i] = nil
-        assureBuffer(length)
+        allocator.reserve(length)
+        
+        generator { (j, value) in
+            if value == .zero {
+                return
+            }
+            
+            prev?.pointee.hasNext = true
+            
+            let p = allocator.next()
+            p.initialize(to: LinkedComponent(j, value))
+            
+            if head == nil {
+                head = p
+            }
+            prev = p
+        }
+
+        if let i = i {
+            heads[i] = head
+        }
+        return head
     }
     
     @discardableResult
-    private func append(_ i: Int, _ j: Int, _ value: R) -> LinkedComponent.Pointer? {
-        guard value != .zero else {
-            return nil
+    private func mergeRows(into i: Int?, length: Int, merging row1: LinkedComponent.Pointer?, _ row2: LinkedComponent.Pointer?, _ f: (R, R) -> R) -> LinkedComponent.Pointer? {
+        return generateRow(at: i, length: length) { append in
+            var (p1, p2) = (row1, row2)
+            
+            while let e1 = p1?.pointee, let e2 = p2?.pointee {
+                let (j1, j2) = (e1.index, e2.index)
+                let (a1, a2) = (e1.value, e2.value)
+                if j1 == j2 {
+                    append(j1, f(a1, a2))
+                    proceed(&p1)
+                    proceed(&p2)
+                    
+                } else if j1 < j2 {
+                    append(j1, f(a1, .zero))
+                    proceed(&p1)
+                    
+                } else if j1 > j2 {
+                    append(j2, f(.zero, a2))
+                    proceed(&p2)
+                }
+            }
+            
+            while let e1 = p1?.pointee {
+                let (j1, a1) = (e1.index, e1.value)
+                append(j1, f(a1, .zero))
+                proceed(&p1)
+            }
+            while let e2 = p2?.pointee {
+                let (j2, a2) = (e2.index, e2.value)
+                append(j2, f(.zero, a2))
+                proceed(&p2)
+            }
         }
-        
-        defer {
-            currentPtr += 1
-            currentIdx += 1
-            assert(currentIdx < bufferLength)
-        }
-        
-        prevAppend?.pointee.hasNext = true
-        
-        currentPtr.initialize(to: LinkedComponent(j, value))
-        if heads[i] == nil {
-            heads[i] = currentPtr
-        }
-        
-        prevAppend = currentPtr
-        
-        log("add: \(currentPtr): \((i, j, value))")
-        
-        return currentPtr
-    }
-    
-    private func finalizeRow(_ i: Int) {
-        prevAppend = nil
-    }
-    
-    private func deallocateBuffers() {
-        for p in bufferHeads {
-            p.deinitialize(count: bufferLength)
-            p.deallocate()
-            log("deallocate \(bufferLength) at \(p)")
-        }
-        bufferHeads.removeAll()
     }
     
     subscript(row: Int, col: Int) -> R {
@@ -169,10 +151,8 @@ internal final class MatrixImpl<R: Ring>: Hashable, CustomStringConvertible {
             return .zero
         } set {
             let (i, j) = align.isHorizontal ? (row, col) : (col, row)
-            let p = LinkedComponent.Pointer.allocate(capacity: 1)
-            p.initialize(to: LinkedComponent(j, newValue - self[row, col]))
-            mergeRows(i, heads[i], p, (+))
-            p.deallocate()
+            let tmp = generateRow(at: nil, length: 1) { append in append(j, newValue - self[row, col]) }
+            mergeRows(into: i, length: align.isHorizontal ? cols : rows, merging: heads[i], tmp, (+))
         }
     }
     
@@ -224,13 +204,13 @@ internal final class MatrixImpl<R: Ring>: Hashable, CustomStringConvertible {
     func mapComponents<R2>(_ f: (R) -> R2) -> MatrixImpl<R2> {
         let res = MatrixImpl<R2>(rows: rows, cols: cols, align: align.isHorizontal ? .horizontal : .vertical, components: [])
         for (i, head) in heads.enumerated() where head != nil {
-            res.initializeRow(i, cols)
-            var p = head
-            while let c = p?.pointee {
-                res.append(i, c.index, f(c.value))
-                proceed(&p)
+            res.generateRow(at: i, length: cols) { append in
+                var p = head
+                while let c = p?.pointee {
+                    append(c.index, f(c.value))
+                    proceed(&p)
+                }
             }
-            res.finalizeRow(i)
         }
         return res
     }
@@ -249,9 +229,9 @@ internal final class MatrixImpl<R: Ring>: Hashable, CustomStringConvertible {
         assert( (a.rows, a.cols) == (b.rows, b.cols) )
         b.switchAlignment(a.align)
         
-        let c = MatrixImpl(rows: a.rows, cols: a.cols, align: a.align, components: [])
+        let c = MatrixImpl(rows: a.rows, cols: a.cols, align: a.align)
         for i in 0 ..< a.rows {
-            c.mergeRows(i, a.heads[i], b.heads[i], (+))
+            c.mergeRows(into: i, length: a.cols, merging: a.heads[i], b.heads[i], (+))
         }
         return c
     }
@@ -284,86 +264,48 @@ internal final class MatrixImpl<R: Ring>: Hashable, CustomStringConvertible {
         let J = (0 ..< b.cols).filter { j in b.heads[j] != nil }
         
         for i in I {
-            c.initializeRow(i, c.cols)
-            for j in J {
-                var r = R.zero
-                var (p, q) = (a.heads[i], b.heads[j])
-                while let x = p?.pointee, let y = q?.pointee {
-                    if x.index == y.index {
-                        r = r + x.value * y.value
-                        proceed(&p)
-                        proceed(&q)
-                    } else if x.index < y.index {
-                        proceed(&p)
-                    } else if x.index > y.index {
-                        proceed(&q)
+            c.generateRow(at: i, length: c.cols) { append in
+                for j in J {
+                    var r = R.zero
+                    var (p, q) = (a.heads[i], b.heads[j])
+                    while let x = p?.pointee, let y = q?.pointee {
+                        if x.index == y.index {
+                            r = r + x.value * y.value
+                            proceed(&p)
+                            proceed(&q)
+                        } else if x.index < y.index {
+                            proceed(&p)
+                        } else if x.index > y.index {
+                            proceed(&q)
+                        }
                     }
+                    append(j, r)
                 }
-                c.append(i, j, r)
             }
-            c.finalizeRow(i)
         }
         
         return c
     }
     
     @_specialize(where R == ComputationSpecializedRing)
-    func multiplyRow(at i0: Int, by r: R) {
+    func multiplyRow(at i: Int, by r: R) {
         switchAlignment(.horizontal)
         
-        guard R.self == Int.self || R.isField else {
-            fatalError()
-        }
-        
-        var p = heads[i0]
-        while let a = p?.pointee.value {
-            p!.pointee.value = r * a
-            proceed(&p)
+        if r != .zero && (R.self == Int.self || R.isField) {
+            var p = heads[i]
+            while let a = p?.pointee.value {
+                p!.pointee.value = r * a
+                proceed(&p)
+            }
+        } else {
+            mergeRows(into: i, length: cols, merging: heads[i], nil, { (a, _) in r * a })
         }
     }
     
     @_specialize(where R == ComputationSpecializedRing)
     func addRow(at i: Int, to j: Int, multipliedBy r: R = .identity) {
         switchAlignment(.horizontal)
-        mergeRows(j, heads[i], heads[j], { r * $0 + $1 })
-    }
-    
-    @_specialize(where R == ComputationSpecializedRing)
-    private func mergeRows(_ i: Int, _ row1: LinkedComponent.Pointer?, _ row2: LinkedComponent.Pointer?, _ f: (R, R) -> R) {
-        initializeRow(i, align.isHorizontal ? cols : rows)
-        
-        var (p1, p2) = (row1, row2)
-        
-        while let e1 = p1?.pointee, let e2 = p2?.pointee {
-            let (j1, j2) = (e1.index, e2.index)
-            let (a1, a2) = (e1.value, e2.value)
-            if j1 == j2 {
-                append(i, j1, f(a1, a2))
-                proceed(&p1)
-                proceed(&p2)
-                
-            } else if j1 < j2 {
-                append(i, j1, f(a1, .zero))
-                proceed(&p1)
-                
-            } else if j1 > j2 {
-                append(i, j2, f(.zero, a2))
-                proceed(&p2)
-            }
-        }
-        
-        while let e1 = p1?.pointee {
-            let (j1, a1) = (e1.index, e1.value)
-            append(i, j1, f(a1, .zero))
-            proceed(&p1)
-        }
-        while let e2 = p2?.pointee {
-            let (j2, a2) = (e2.index, e2.value)
-            append(i, j2, f(.zero, a2))
-            proceed(&p2)
-        }
-        
-        finalizeRow(i)
+        mergeRows(into: j, length: cols, merging: heads[i], heads[j], { r * $0 + $1 })
     }
     
     func swapRows(_ i0: Int, _ i1: Int) {
@@ -460,12 +402,6 @@ internal final class MatrixImpl<R: Ring>: Hashable, CustomStringConvertible {
         }
     }
     
-    private func log(_ s: @autoclosure () -> String) {
-        if _debug {
-            print(s())
-        }
-    }
-    
     var hashValue: Int {
         return isZero ? 0 : 1 // TODO
     }
@@ -511,7 +447,7 @@ extension MatrixImpl {
         let components = (0 ..< rows * cols).compactMap { k -> MatrixComponent<R>? in
             let (i, j) = (k / cols, k % cols)
             let a = g(i, j)
-            return nilIfZero(a).map{ a in (i, j, a) }
+            return (a != .zero) ? (i, j, a) : nil
         }
         self.init(rows: rows, cols: cols, align: align, components: components)
     }
@@ -652,11 +588,6 @@ extension MatrixImpl: Codable where R: Codable {
         try c.encode(cols, forKey: .cols)
         try c.encode(generateGrid(), forKey: .grid)
     }
-}
-
-@inlinable
-func nilIfZero<R: Ring>(_ r: R?) -> R? {
-    return (r == .zero) ? nil : r
 }
 
 fileprivate func proceed<R>(_ p: inout MatrixImpl<R>.LinkedComponent.Pointer?) {
