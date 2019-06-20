@@ -35,61 +35,145 @@ class MatrixImplTests: XCTestCase {
         return MatrixImpl(rows: 1, cols: 1, grid: xs)
     }
     
-    public func testSwitchFromRow() {
+    func testEqual() {
+        let a = M22(1,2,3,4)
+        XCTAssertEqual(a, M22(1,2,3,4))
+        XCTAssertNotEqual(a, M22(1,3,2,4))
+    }
+    
+    func testEqual_differentAlign() {
+        let a = M22(1,2,3,4)
+        let b = M22c(1,2,3,4)
+        XCTAssertEqual(a, b)
+    }
+    
+    func testSwitchFromRow() {
         let a = M22(1,2,3,4)
         a.switchAlignment(.vertical)
         XCTAssertEqual(a, M22(1,2,3,4))
     }
     
-    public func testSwitchFromCol() {
+    func testSwitchFromCol() {
         let a = M22c(1,2,3,4)
         a.switchAlignment(.horizontal)
         XCTAssertEqual(a, M22(1,2,3,4))
     }
     
-    public func testAddRow() {
+    func testSubscript() {
+        let a = M22(1,2,0,4)
+        XCTAssertEqual(a[0, 0], 1)
+        XCTAssertEqual(a[0, 1], 2)
+        XCTAssertEqual(a[1, 0], 0)
+        XCTAssertEqual(a[1, 1], 4)
+    }
+    
+    func testSubscript_c() {
+        let a = M22c(1,2,0,4)
+        XCTAssertEqual(a[0, 0], 1)
+        XCTAssertEqual(a[0, 1], 2)
+        XCTAssertEqual(a[1, 0], 0)
+        XCTAssertEqual(a[1, 1], 4)
+    }
+    
+    func testSubscriptSet() {
+        let a = M22(1,2,0,4)
+        a[0, 0] = 0
+        a[0, 1] = -1
+        a[1, 1] = 2
+        XCTAssertEqual(a.generateGrid(), [0, -1, 0, 2])
+    }
+
+    func testSubscriptSet_c() {
+        let a = M22c(1,2,0,4)
+        a[0, 0] = 0
+        a[0, 1] = -1
+        a[1, 1] = 2
+        XCTAssertEqual(a.generateGrid(), [0, -1, 0, 2])
+    }
+
+    func testAdd1() {
+        let a = M22(1,2,3,4)
+        let b = M22(2,3,6,4)
+        let c = a + b
+        XCTAssertEqual(c, M22(3,5,9,8))
+    }
+    
+    func testAdd2() {
+        let a = M22(1,2,3,4)
+        let b = M22c(2,3,6,4)
+        let c = a + b
+        XCTAssertEqual(c, M22(3,5,9,8))
+    }
+    
+    func testAdd3() {
+        let a = M22c(1,2,3,4)
+        let b = M22(2,3,6,4)
+        let c = a + b
+        XCTAssertEqual(c, M22(3,5,9,8))
+    }
+    
+    func testAdd4() {
+        let a = M22c(1,2,3,4)
+        let b = M22c(2,3,6,4)
+        let c = a + b
+        XCTAssertEqual(c, M22(3,5,9,8))
+    }
+    
+    func testAddRow() {
         let a = M22(1,2,3,4)
         a.addRow(at: 0, to: 1)
         XCTAssertEqual(a, M22(1,2,4,6))
     }
     
-    public func testAddRowWithMul() {
+    func testAddRowWithMul() {
         let a = M22(1,2,3,4)
         a.addRow(at: 0, to: 1, multipliedBy: 2)
         XCTAssertEqual(a, M22(1,2,5,8))
     }
     
-    public func testAddCol() {
+    func testAddCol() {
         let a = M22(1,2,3,4)
         a.addCol(at: 0, to: 1)
         XCTAssertEqual(a, M22(1,3,3,7))
     }
     
-    public func testAddColWithMul() {
+    func testAddColWithMul() {
         let a = M22(1,2,3,4)
         a.addCol(at: 0, to: 1, multipliedBy: 2)
         XCTAssertEqual(a, M22(1,4,3,10))
     }
     
-    public func testMulRow() {
+    func testMulRow() {
         let a = M22(1,2,3,4)
         a.multiplyRow(at: 0, by: 2)
         XCTAssertEqual(a, M22(2,4,3,4))
     }
     
-    public func testMulCol() {
+    func testMulRow_zero() {
+        let a = M22(1,2,3,4)
+        a.multiplyRow(at: 0, by: 0)
+        XCTAssertEqual(a, M22(0,0,3,4))
+    }
+    
+    func testMulCol() {
         let a = M22(1,2,3,4)
         a.multiplyCol(at: 0, by: 2)
         XCTAssertEqual(a, M22(2,2,6,4))
     }
     
-    public func testSwapRows() {
+    func testMulCol_zero() {
+        let a = M22(1,2,3,4)
+        a.multiplyCol(at: 0, by: 0)
+        XCTAssertEqual(a, M22(0,2,0,4))
+    }
+    
+    func testSwapRows() {
         let a = M22(1,2,3,4)
         a.swapRows(0, 1)
         XCTAssertEqual(a, M22(3,4,1,2))
     }
     
-    public func testSwapCols() {
+    func testSwapCols() {
         let a = M22(1,2,3,4)
         a.swapCols(0, 1)
         XCTAssertEqual(a, M22(2,1,4,3))

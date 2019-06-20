@@ -49,12 +49,6 @@ class MatrixTests: XCTestCase {
         XCTAssertEqual(a[0, 1], 2)
         XCTAssertEqual(a[1, 0], 0)
         XCTAssertEqual(a[1, 1], 4)
-        
-        a.impl.switchAlignment(.vertical)
-        XCTAssertEqual(a[0, 0], 1)
-        XCTAssertEqual(a[0, 1], 2)
-        XCTAssertEqual(a[1, 0], 0)
-        XCTAssertEqual(a[1, 1], 4)
     }
     
     func testSubscriptSet() {
@@ -63,12 +57,6 @@ class MatrixTests: XCTestCase {
         a[0, 1] = -1
         a[1, 1] = 2
         XCTAssertEqual(a.generateGrid(), [0, -1, 0, 2])
-        
-        a.impl.switchAlignment(.vertical)
-        a[0, 1] = 0
-        a[1, 0] = 3
-        a[1, 1] = 4
-        XCTAssertEqual(a.generateGrid(), [0, 0, 3, 4])
     }
     
     func testCopyOnMutate() {
