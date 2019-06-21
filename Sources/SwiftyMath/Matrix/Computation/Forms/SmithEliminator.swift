@@ -9,19 +9,15 @@
 import Foundation
 
 internal final class SmithEliminator<R: EuclideanRing>: MatrixEliminator<R> {
-    var targetIndex = 0
+    var currentIndex = 0
     var done = false
-    
-    override var resultType: MatrixEliminationResultImpl<R>.Type {
-        return DiagonalEliminationResult.self
-    }
     
     override func prepare() {
         run(DiagonalEliminator.self)
     }
     
     override func isDone() -> Bool {
-        return done || targetIndex >= min(rows, cols)
+        return done || currentIndex >= min(target.rows, target.cols)
     }
     
     @_specialize(where R == ComputationSpecializedRing)
@@ -53,11 +49,11 @@ internal final class SmithEliminator<R: EuclideanRing>: MatrixEliminator<R> {
             }
         }
         
-        if i0 != targetIndex {
-            swapDiagonal(i0, targetIndex)
+        if i0 != currentIndex {
+            swapDiagonal(i0, currentIndex)
         }
         
-        targetIndex += 1
+        currentIndex += 1
     }
     
     private func diagonalGCD(_ d1: (Int, R), _ d2: (Int, R)) {
@@ -81,7 +77,7 @@ internal final class SmithEliminator<R: EuclideanRing>: MatrixEliminator<R> {
     }
     
     private func targetDiagonal() -> [(Int, R)] {
-        return (targetIndex ..< min(rows, cols)).compactMap { i in
+        return (currentIndex ..< min(target.rows, target.cols)).compactMap { i in
             if let v = target.heads[i]?.pointee.value {
                 return (i, v)
             } else {
