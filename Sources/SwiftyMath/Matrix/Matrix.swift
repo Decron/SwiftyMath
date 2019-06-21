@@ -108,8 +108,15 @@ public struct Matrix<n: SizeType, m: SizeType, R: Ring>: SetType {
         return Matrix<n, m, R2>(impl.mapComponents(f))
     }
     
-    func generateGrid() -> [R] {
+    public func generateGrid() -> [R] {
         return impl.generateGrid()
+    }
+    
+    public func `as`<n, m>(_ type: Matrix<n, m, R>.Type) -> Matrix<n, m, R> {
+        assert(n.isDynamic || n.intValue == rows)
+        assert(m.isDynamic || m.intValue == cols)
+        
+        return Matrix<n, m, R>(impl)
     }
     
     public var hashValue: Int {
@@ -173,10 +180,6 @@ extension Matrix: AdditiveGroup, Module where n: StaticSizeType, m: StaticSizeTy
     
     public static func unit(_ i0: Int, _ j0: Int) -> Matrix<n, m, R> {
         return Matrix(components: [(i0, j0, .identity)])
-    }
-    
-    public var asDynamic: DMatrix<R> {
-        return DMatrix(impl)
     }
 }
 
@@ -346,13 +349,6 @@ public extension Matrix where n == DynamicSize, m == DynamicSize {
     
     static func ⊗ (a: DMatrix<R>, b: DMatrix<R>) -> DMatrix<R> {
         return DMatrix(a.impl ⊗ b.impl)
-    }
-    
-    func `as`<n, m>(_ type: Matrix<n, m, R>.Type) -> Matrix<n, m, R> {
-        assert(n.isDynamic || n.intValue == rows)
-        assert(m.isDynamic || m.intValue == cols)
-        
-        return Matrix<n, m, R>(impl)
     }
 }
 
