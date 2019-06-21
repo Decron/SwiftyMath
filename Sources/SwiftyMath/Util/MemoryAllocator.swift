@@ -37,6 +37,7 @@ public final class MemoryAllocator<T> {
         log("allocate \(bufferLength) at \(p)")
     }
     
+    @discardableResult
     public func reserve(_ length: Int) {
         assert(length <= bufferLength)
         
@@ -62,9 +63,8 @@ public final class MemoryAllocator<T> {
         count = 0
         
         for p in bufferHeads {
-            p.deinitialize(count: bufferLength)
-            p.deallocate()
             log("deallocate \(bufferLength) at \(p)")
+            p.deallocate()
         }
         bufferHeads.removeAll()
     }
