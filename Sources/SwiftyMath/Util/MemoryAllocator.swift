@@ -37,7 +37,6 @@ public final class MemoryAllocator<T> {
         log("allocate \(bufferLength) at \(p)")
     }
     
-    @discardableResult
     public func reserve(_ length: Int) {
         assert(length <= bufferLength)
         

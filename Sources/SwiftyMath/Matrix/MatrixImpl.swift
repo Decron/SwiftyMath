@@ -210,9 +210,13 @@ internal final class MatrixImpl<R: Ring>: Hashable, CustomStringConvertible {
         }
     }
     
+    var diagonal: [R] {
+        return (0 ..< min(rows, cols)).map { i in self[i, i] }
+    }
+    
     var trace: R {
         assert(rows == cols)
-        return (0 ..< rows).sum { i in self[i, i] }
+        return diagonal.sumAll()
     }
     
     var determinant: R {

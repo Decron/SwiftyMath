@@ -8,12 +8,9 @@ public protocol Module: AdditiveGroup {
 
 public func *<M: Module, n, m>(v: [M], A: Matrix<n, m, M.CoeffRing>) -> [M] {
     assert(v.count == A.rows)
-    let cols = A.nonZeroComponents.group{ $0.col }
     return (0 ..< A.cols).map{ j in
-        guard let col = cols[j] else {
-            return .zero
-        }
-        return col.sum { (i, _, a) in a * v[i] }
+        let itr = A.iterator(forCol: j)
+        return IteratorSequence(itr).sum{ (i, _, a) in a * v[i] }
     }
 }
 

@@ -88,7 +88,7 @@ class MatrixEliminationTests: XCTestCase {
     }
 
     func testZ46_zero() {
-        let A = M<_4, _6, 𝐙>.init(fill: 0)
+        let A = M<_4, _6, 𝐙>.zero
         let E = MatrixEliminator.eliminate(A, form: .Smith)
         XCTAssertEqual(E.result, A)
     }
