@@ -306,7 +306,8 @@ internal final class MatrixImpl<R: Ring>: Hashable, CustomStringConvertible {
     
     func concatHorizontally(_ B: MatrixImpl<R>) -> MatrixImpl<R> {
         let A = self
-        
+        assert(A.rows == B.rows)
+
         A.transpose()
         B.transpose()
         
@@ -320,7 +321,7 @@ internal final class MatrixImpl<R: Ring>: Hashable, CustomStringConvertible {
     
     func concatVertically(_ B: MatrixImpl<R>) -> MatrixImpl<R> {
         let A = self
-        assert(A.rows == B.rows)
+        assert(A.cols == B.cols)
         
         A.switchAlignment(.horizontal)
         B.switchAlignment(.horizontal)
@@ -457,6 +458,16 @@ internal final class MatrixImpl<R: Ring>: Hashable, CustomStringConvertible {
         }
         
         return c
+    }
+    
+    static func ⊗(a: MatrixImpl, b: MatrixImpl) -> MatrixImpl<R> {
+        b.switchAlignment(.vertical)
+        return (0 ..< a.rows).reduce(MatrixImpl.zero(rows: 0, cols: a.cols * b.cols, align: .horizontal)) { (res, i) in
+            let rowBlock = (0 ..< a.cols).reduce(MatrixImpl.zero(rows: b.rows, cols: 0, align: .vertical)) { (res, j) in
+                res.concatHorizontally(a[i, j] * b)
+            }
+            return res.concatVertically(rowBlock)
+        }
     }
     
     @discardableResult
