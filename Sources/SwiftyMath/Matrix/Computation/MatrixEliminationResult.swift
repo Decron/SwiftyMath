@@ -8,19 +8,20 @@
 import Foundation
 
 public struct MatrixEliminationResult<n: SizeType, m: SizeType, R: EuclideanRing> {
-    let result: Matrix<n, m, R>
-    let rowOps: [MatrixEliminator<R>.ElementaryOperation]
-    let colOps: [MatrixEliminator<R>.ElementaryOperation]
+    public let result: Matrix<n, m, R>
+    
+    private let rowOps: [MatrixEliminator<R>.ElementaryOperation]
+    private let colOps: [MatrixEliminator<R>.ElementaryOperation]
 
+    private let _rank:        Cache<Int> = .empty
+    private let _matrixCache: CacheDictionary<String, MatrixImpl<R>> = .empty
+    
     internal init(_ result: MatrixImpl<R>, _ rowOps: [MatrixEliminator<R>.ElementaryOperation], _ colOps: [MatrixEliminator<R>.ElementaryOperation]) {
         self.result = Matrix(result)
         self.rowOps = rowOps
         self.colOps = colOps
     }
     
-    private let _rank:        Cache<Int> = .empty
-    private let _matrixCache: CacheDictionary<String, MatrixImpl<R>> = .empty
-
     public var rank: Int {
         return _rank.useCacheOrSet {
             result.impl.heads.count{ $0 != nil }
