@@ -109,8 +109,11 @@ class MatrixTests: XCTestCase {
     func testInv() {
         let a = M(1,2,2,3)
         XCTAssertEqual(a.inverse!, M(-3,2,2,-1))
-        
+    }
+    
+    func testNonInvertible() {
         let b = M(1,2,3,4)
+        XCTAssertFalse(b.isInvertible)
         XCTAssertNil(b.inverse)
     }
     

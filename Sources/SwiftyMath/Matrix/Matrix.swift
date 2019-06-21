@@ -72,8 +72,12 @@ public struct Matrix<n: SizeType, m: SizeType, R: Ring>: SetType {
         return impl.isIdentity
     }
     
+    public var isDiagonal: Bool {
+        return impl.isDiagonal
+    }
+    
     public var diagonal: [R] {
-        return (0 ..< Swift.min(rows, cols)).map{ i in self[i, i] }
+        return (0 ..< min(rows, cols)).map{ i in self[i, i] }
     }
     
     public var transposed: Matrix<m, n, R> {
@@ -88,9 +92,9 @@ public struct Matrix<n: SizeType, m: SizeType, R: Ring>: SetType {
         return ColVector(impl.submatrix(0 ..< rows, j ..< j + 1))
     }
     
+    @available(*, deprecated)
     public var nonZeroComponents: [MatrixComponent<R>] {
-        fatalError()
-//        return impl.components
+        return impl.generateComponents()
     }
     
     public func mapNonZeroComponents<R2>(_ f: (R) -> R2) -> Matrix<n, m, R2> {
@@ -311,17 +315,6 @@ public extension Matrix where n == DynamicSize, m == DynamicSize {
         impl.transpose()
     }
     
-    static func ⊕ (a: DMatrix<R>, b: DMatrix<R>) -> DMatrix<R> {
-        return DMatrix<R>(a.impl.concatDiagonally(b.impl))
-    }
-    
-    static func ⊗ (a: DMatrix<R>, b: DMatrix<R>) -> DMatrix<R> {
-        let (n, m) = (b.rows, b.cols)
-        return DMatrix<R>(rows: a.rows * b.rows, cols: a.cols * b.cols) { (i, j) in
-            a[i / n, j / m] * b[i % n, j % m]
-        }
-    }
-    
     func submatrix(rowRange: CountableRange<Int>) -> DMatrix<R> {
         return Matrix<DynamicSize, m, R>(impl.submatrix(rowRange: rowRange) )
     }
@@ -330,12 +323,21 @@ public extension Matrix where n == DynamicSize, m == DynamicSize {
         return Matrix<n, DynamicSize, R>(impl.submatrix(colRange: colRange) )
     }
     
-    func submatrix(rowRange: CountableRange<Int>, colRange: CountableRange<Int>) -> DMatrix<R> {
+    func submatrix(_ rowRange: CountableRange<Int>, _ colRange: CountableRange<Int>) -> DMatrix<R> {
         return DMatrix(impl.submatrix(rowRange, colRange))
     }
     
-    func submatrix(rowsMatching r: (Int) -> Bool, colsMatching c: (Int) -> Bool) -> DMatrix<R> {
-        return DMatrix(impl.submatrix(r, c))
+    func blocks(rowSizes: [Int], colSizes: [Int]) -> [[DMatrix<R>]] {
+        var i = 0
+        return rowSizes.map { r -> [DMatrix<R>] in
+            defer { i += r }
+            
+            var j = 0
+            return colSizes.map { c -> DMatrix<R> in
+                defer { j += c }
+                return self.submatrix(i ..< i + r, j ..< j + c)
+            }
+        }
     }
     
     func concatHorizontally(_ B: DMatrix<R>) -> DMatrix<R> {
@@ -348,16 +350,20 @@ public extension Matrix where n == DynamicSize, m == DynamicSize {
         return DMatrix<R>(impl.concatVertically(B.impl))
     }
     
-    func blocks(rowSizes: [Int], colSizes: [Int]) -> [[DMatrix<R>]] {
-        var i = 0
-        return rowSizes.map { r -> [DMatrix<R>] in
-            defer { i += r }
-            
-            var j = 0
-            return colSizes.map { c -> DMatrix<R> in
-                defer { j += c }
-                return self.submatrix(rowRange: i ..< i + r, colRange: j ..< j + c)
-            }
+    func concatDiagonally(_ B: DMatrix<R>) -> DMatrix<R> {
+        assert(cols == B.cols)
+        return DMatrix<R>(impl.concatDiagonally(B.impl))
+    }
+    
+    static func ⊕ (A: DMatrix<R>, B: DMatrix<R>) -> DMatrix<R> {
+        return A.concatDiagonally(B)
+    }
+    
+    static func ⊗ (a: DMatrix<R>, b: DMatrix<R>) -> DMatrix<R> {
+        // TODO use concat
+        let (n, m) = (b.rows, b.cols)
+        return DMatrix<R>(rows: a.rows * b.rows, cols: a.cols * b.cols) { (i, j) in
+            a[i / n, j / m] * b[i % n, j % m]
         }
     }
     

@@ -178,4 +178,57 @@ class MatrixImplTests: XCTestCase {
         a.swapCols(0, 1)
         XCTAssertEqual(a, M22(2,1,4,3))
     }
+    
+    func testSubmatrixRow() {
+        let a = M22(1,2,3,4)
+        let a1 = a.submatrix(rowRange: 0 ..< 1)
+        XCTAssertEqual(a1, M12(1, 2))
+    }
+    
+    func testSubmatrixCol() {
+        let a = M22(1,2,3,4)
+        let a2 = a.submatrix(colRange: 1 ..< 2)
+        XCTAssertEqual(a2, M21(2, 4))
+    }
+    
+    func testSubmatrixBoth() {
+        let a = M22(1,2,3,4)
+        let a3 = a.submatrix(1 ..< 2, 0 ..< 1)
+        XCTAssertEqual(a3, M11(3))
+    }
+    
+    func testConcatHor() {
+        let a = M22(1,2,3,4)
+        let b = M22(5,6,7,8)
+        let y = a.concatHorizontally(b)
+        XCTAssertEqual(y, MatrixImpl(rows: 2, cols: 4, grid:
+            [1,2,5,6,
+             3,4,7,8]
+        ))
+    }
+    
+    func testConcatVer() {
+        let a = M22(1,2,3,4)
+        let b = M22(5,6,7,8)
+        
+        let x = a.concatVertically(b)
+        XCTAssertEqual(x, MatrixImpl(rows: 4, cols: 2, grid:
+            [1,2,
+             3,4,
+             5,6,
+             7,8]
+        ))
+    }
+    
+    func testConcatDiag() {
+        let a = M22(1,2,3,4)
+        let b = M22(5,6,7,8)
+        let x = a.concatDiagonally(b)
+        XCTAssertEqual(x, MatrixImpl(rows: 4, cols: 4, grid:
+            [1,2,0,0,
+             3,4,0,0,
+             0,0,5,6,
+             0,0,7,8]
+        ))
+    }
 }
