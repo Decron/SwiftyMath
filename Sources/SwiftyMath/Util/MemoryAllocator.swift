@@ -16,7 +16,7 @@ public final class MemoryAllocator<T> {
     private var count: Int
     private var debug: Bool
     
-    public init(bufferLength: Int, debug: Bool = true) {
+    public init(bufferLength: Int, debug: Bool = false) {
         self.bufferLength = bufferLength
         self.bufferHeads = []
         
@@ -34,7 +34,7 @@ public final class MemoryAllocator<T> {
         bufferHeads.append(p)
         ptr = p
         count = 0
-        log("allocate \(bufferLength) at \(ptr)")
+        log("allocate \(bufferLength) at \(p)")
     }
     
     public func reserve(_ length: Int) {
