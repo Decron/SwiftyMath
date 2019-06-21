@@ -231,4 +231,17 @@ class MatrixImplTests: XCTestCase {
              0,0,7,8]
         ))
     }
+    
+    func testTensorProduct() {
+        let a = M22(1,2,0,3)
+        let b = M22(1,2,3,4)
+        let x = a ⊗ b
+        XCTAssertEqual(x, MatrixImpl(rows: 4, cols: 4, grid:
+            [1,2,2,4,
+             3,4,6,8,
+             0,0,3,6,
+             0,0,9,12]
+        ))
+    }
+
 }

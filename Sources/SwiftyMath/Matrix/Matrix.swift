@@ -342,17 +342,17 @@ public extension Matrix where n == DynamicSize, m == DynamicSize {
     
     func concatHorizontally(_ B: DMatrix<R>) -> DMatrix<R> {
         assert(rows == B.rows)
-        return DMatrix<R>(impl.concatHorizontally(B.impl))
+        return DMatrix(impl.concatHorizontally(B.impl))
     }
     
     func concatVertically(_ B: DMatrix<R>) -> DMatrix<R> {
         assert(cols == B.cols)
-        return DMatrix<R>(impl.concatVertically(B.impl))
+        return DMatrix(impl.concatVertically(B.impl))
     }
     
     func concatDiagonally(_ B: DMatrix<R>) -> DMatrix<R> {
         assert(cols == B.cols)
-        return DMatrix<R>(impl.concatDiagonally(B.impl))
+        return DMatrix(impl.concatDiagonally(B.impl))
     }
     
     static func ⊕ (A: DMatrix<R>, B: DMatrix<R>) -> DMatrix<R> {
@@ -360,11 +360,7 @@ public extension Matrix where n == DynamicSize, m == DynamicSize {
     }
     
     static func ⊗ (a: DMatrix<R>, b: DMatrix<R>) -> DMatrix<R> {
-        // TODO use concat
-        let (n, m) = (b.rows, b.cols)
-        return DMatrix<R>(rows: a.rows * b.rows, cols: a.cols * b.cols) { (i, j) in
-            a[i / n, j / m] * b[i % n, j % m]
-        }
+        return DMatrix(a.impl ⊗ b.impl)
     }
     
     func `as`<n, m>(_ type: Matrix<n, m, R>.Type) -> Matrix<n, m, R> {
