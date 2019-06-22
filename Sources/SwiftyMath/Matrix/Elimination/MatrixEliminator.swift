@@ -8,33 +8,16 @@
 
 import Foundation
 
-public class MatrixEliminator<R: EuclideanRing> {
-    public enum Form {
-        case RowEchelon
-        case ColEchelon
-        case RowHermite
-        case ColHermite
-        case Diagonal
-        case Smith
-    }
-    
-    public static func eliminate<n, m>(_ A: Matrix<n, m, R>, form: Form = .Diagonal, debug: Bool = false) -> MatrixEliminationResult<n, m, R> {
-        let type: MatrixEliminator<R>.Type
-        
-        switch form {
-        case .RowEchelon: type = RowEchelonEliminator.self
-        case .ColEchelon: type = ColEchelonEliminator.self
-        case .RowHermite: type = RowHermiteEliminator.self
-        case .ColHermite: type = ColHermiteEliminator.self
-        case .Smith:      type = SmithEliminator     .self
-        default:          type = DiagonalEliminator  .self
-        }
-        
-        let elim = type.init(A.impl.copy(), debug: debug)
-        elim.run()
-        return MatrixEliminationResult(elim.target, elim.rowOps, elim.colOps)
-    }
+public enum MatrixEliminationForm {
+    case RowEchelon
+    case ColEchelon
+    case RowHermite
+    case ColHermite
+    case Diagonal
+    case Smith
+}
 
+internal class MatrixEliminator<R: EuclideanRing> {
     var target: MatrixImpl<R>
     var rowOps: [ElementaryOperation]
     var colOps: [ElementaryOperation]
