@@ -65,7 +65,7 @@ public struct Matrix<n: SizeType, m: SizeType, R: Ring>: SetType {
     }
     
     public static func ⊕ <n1, m1>(A: Matrix<n, m, R>, B: Matrix<n1, m1, R>) -> DMatrix<R> {
-        return A.concatDiagonally(B)
+        return .init(A.impl ⊕ B.impl)
     }
     
     public static func ⊗ <n1, m1>(A: Matrix<n, m, R>, B: Matrix<n1, m1, R>) -> DMatrix<R> {
@@ -82,21 +82,6 @@ public struct Matrix<n: SizeType, m: SizeType, R: Ring>: SetType {
     
     public func submatrix(_ rowRange: CountableRange<Int>, _ colRange: CountableRange<Int>) -> DMatrix<R> {
         return .init(impl.submatrix(rowRange, colRange))
-    }
-    
-    public func concatHorizontally<m1>(_ B: Matrix<n, m1, R>) -> Matrix<n, DynamicSize, R> {
-        assert(rows == B.rows)
-        return .init(impl.concatHorizontally(B.impl))
-    }
-    
-    public func concatVertically<n1>(_ B: Matrix<n1, m, R>) -> Matrix<DynamicSize, m, R> {
-        assert(cols == B.cols)
-        return .init(impl.concatVertically(B.impl))
-    }
-    
-    public func concatDiagonally<n1, m1>(_ B: Matrix<n1, m1, R>) -> DMatrix<R> {
-        assert(cols == B.cols)
-        return .init(impl.concatDiagonally(B.impl))
     }
     
     public func decomposeIntoBlocks(rowSizes: [Int], colSizes: [Int]) -> [[DMatrix<R>]] {
@@ -293,36 +278,36 @@ extension Matrix where n == m, n == _1 {
     }
 }
 
-public extension Matrix where n == DynamicSize, m == DynamicSize {
-    init(rows: Int, cols: Int, grid: [R]) {
+extension Matrix where n == DynamicSize, m == DynamicSize {
+    public init(rows: Int, cols: Int, grid: [R]) {
         self.init(MatrixImpl(rows: rows, cols: cols, grid: grid))
     }
     
-    init(rows: Int, cols: Int, grid: R ...) {
+    public init(rows: Int, cols: Int, grid: R ...) {
         self.init(rows: rows, cols: cols, grid: grid)
     }
     
-    init(rows: Int, cols: Int, generator g: (Int, Int) -> R) {
+    public init(rows: Int, cols: Int, generator g: (Int, Int) -> R) {
         self.init(MatrixImpl(rows: rows, cols: cols, generator: g))
     }
     
-    init(rows: Int, cols: Int, components: [MatrixComponent<R>]) {
+    public init(rows: Int, cols: Int, components: [MatrixComponent<R>]) {
         self.init(MatrixImpl(rows: rows, cols: cols, components: components))
     }
     
-    static func identity(size n: Int) -> DMatrix<R> {
+    public static func identity(size n: Int) -> DMatrix<R> {
         return DMatrix(.identity(size: n))
     }
     
-    static func zero(size n: Int) -> DMatrix<R> {
+    public static func zero(size n: Int) -> DMatrix<R> {
         return DMatrix.zero(rows: n, cols: n)
     }
     
-    static func zero(rows: Int, cols: Int) -> DMatrix<R> {
+    public static func zero(rows: Int, cols: Int) -> DMatrix<R> {
         return DMatrix(.zero(rows: rows, cols: cols))
     }
     
-    var inverse: DMatrix<R>? {
+    public var inverse: DMatrix<R>? {
         assert(rows == cols)
         if rows >= 5 {
             print("warn: Directly computing matrix-inverse can be extremely slow. Use elimination().determinant instead.")
@@ -330,12 +315,12 @@ public extension Matrix where n == DynamicSize, m == DynamicSize {
         return impl.inverse.map{ DMatrix($0) }
     }
     
-    var trace: R {
+    public var trace: R {
         assert(rows == cols)
         return impl.trace
     }
     
-    var determinant: R {
+    public var determinant: R {
         assert(rows == cols)
         if rows >= 5 {
             print("warn: Directly computing determinant can be extremely slow. Use elimination().determinant instead.")
@@ -344,10 +329,24 @@ public extension Matrix where n == DynamicSize, m == DynamicSize {
         return impl.determinant
     }
     
-    func pow(_ n: 𝐙) -> DMatrix<R> {
+    public func pow(_ n: 𝐙) -> DMatrix<R> {
         assert(rows == cols)
         assert(n >= 0)
         return (0 ..< n).reduce(.identity(size: rows)){ (res, _) in self * res }
+    }
+    
+    public mutating func concatVertically<n1, m1>(_ B: Matrix<n1, m1, R>) {
+        assert(cols == B.cols)
+        impl.concatVertically(B.impl)
+    }
+    
+    public mutating func concatHorizontally<n1, m1>(_ B: Matrix<n1, m1, R>) {
+        assert(rows == B.rows)
+        impl.concatHorizontally(B.impl)
+    }
+    
+    public mutating func concatDiagonally<n1, m1>(_ B: Matrix<n1, m1, R>) {
+        impl.concatDiagonally(B.impl)
     }
 }
 
@@ -370,28 +369,28 @@ extension Matrix where R: EuclideanRing {
     }
 }
 
-public extension Matrix where R: RealSubset {
-    var asReal: Matrix<n, m, 𝐑> {
+extension Matrix where R: RealSubset {
+    public var asReal: Matrix<n, m, 𝐑> {
         return Matrix<n, m, 𝐑>(impl.mapComponents{ $0.asReal })
     }
 }
 
-public extension Matrix where R: ComplexSubset {
-    var asComplex: Matrix<n, m, 𝐂> {
+extension Matrix where R: ComplexSubset {
+    public var asComplex: Matrix<n, m, 𝐂> {
         return Matrix<n, m, 𝐂>(impl.mapComponents{ $0.asComplex })
     }
 }
 
-public extension Matrix where R == 𝐂 {
-    var realPart: Matrix<n, m, 𝐑> {
+extension Matrix where R == 𝐂 {
+    public var realPart: Matrix<n, m, 𝐑> {
         return Matrix<n, m, 𝐑>(impl.mapComponents{ $0.realPart })
     }
     
-    var imaginaryPart: Matrix<n, m, 𝐑> {
+    public var imaginaryPart: Matrix<n, m, 𝐑> {
         return Matrix<n, m, 𝐑>(impl.mapComponents{ $0.imaginaryPart })
     }
     
-    var adjoint: Matrix<m, n, R> {
+    public var adjoint: Matrix<m, n, R> {
         return transposed.mapNonZeroComponents { $0.conjugate }
     }
 }
