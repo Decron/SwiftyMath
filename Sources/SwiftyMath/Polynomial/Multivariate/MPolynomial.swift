@@ -15,7 +15,7 @@ public typealias  xnPolynomial<R: Ring> = MPolynomial<_xn,  R>
 public struct MPolynomial<xn: MPolynomialIndeterminate, R: Ring>: Ring, Module {
     public typealias CoeffRing = R
     
-    // e.g. [(2, 1, 3) : 5] -> 5 * x^2 * y * z^3
+    // e.g. [(2, 1, 3) : 5] -> 5 x^2 y z^3
     private let coeffs: [IntList : R]
     
     public init(from n: 𝐙) {
@@ -28,7 +28,10 @@ public struct MPolynomial<xn: MPolynomialIndeterminate, R: Ring>: Ring, Module {
     
     public init(coeffs: [IntList : R]) {
         assert(!xn.isFinite || coeffs.keys.allSatisfy{ I in I.length <= xn.numberOfIndeterminates } )
-        self.coeffs = coeffs.filter{ $0.value != .zero }
+        self.coeffs = coeffs
+            .filter{ $0.value != .zero }
+            .mapKeys{ I in IntList( I.components.dropLast{ $0 == 0 }.toArray() ) }
+        // TODO improve
     }
     
     public static var zero: MPolynomial<xn, R> {
@@ -37,6 +40,10 @@ public struct MPolynomial<xn: MPolynomialIndeterminate, R: Ring>: Ring, Module {
     
     public var inverse: MPolynomial<xn, R>? {
         return (isConst) ? constTerm.inverse.map{ inv in MPolynomial(inv) } : nil
+    }
+    
+    public static func indeterminate(_ i: Int) -> MPolynomial<xn, R> {
+        return MPolynomial(coeffs: [[i : 1] : .identity])
     }
     
     internal var multiIndices: [IntList] {
@@ -51,6 +58,14 @@ public struct MPolynomial<xn: MPolynomialIndeterminate, R: Ring>: Ring, Module {
         return coeff(IntList(indices))
     }
     
+    public var isMonomial: Bool {
+        return coeffs.count <= 1
+    }
+    
+    public var isMonic: Bool {
+        return leadCoeff == .identity
+    }
+    
     public var leadCoeff: R {
         return self.coeff(leadDegree)
     }
@@ -59,12 +74,16 @@ public struct MPolynomial<xn: MPolynomialIndeterminate, R: Ring>: Ring, Module {
         return multiIndices.last ?? .empty // lex-order
     }
     
-    public var totalDegree: Int {
+    public var degree: Int {
         return coeffs.keys.map { I in xn.degree(exponents: I)}.max() ?? 0
     }
     
     public var isConst: Bool {
         return coeffs.isEmpty || (coeffs.count == 1 && coeffs.keys.contains(.empty))
+    }
+    
+    public var terms: [MPolynomial<xn, R>] {
+        return coeffs.map{ (I, a) in MPolynomial(coeffs: [I : a]) }
     }
     
     public var constTerm: R {
@@ -160,7 +179,7 @@ public struct MPolynomial<xn: MPolynomialIndeterminate, R: Ring>: Ring, Module {
             case (-.identity, _): return "-\(x)"
             default: return "\(a)\(x)"
             }
-        }.joined(separator: " + ")
+            }.joined(separator: " + ")
         
         return res.isEmpty ? "0" : res
     }
@@ -168,7 +187,7 @@ public struct MPolynomial<xn: MPolynomialIndeterminate, R: Ring>: Ring, Module {
     public static var symbol: String {
         if xn.isFinite {
             let n = xn.numberOfIndeterminates
-            return "\(R.symbol)\( (0 ..< n).map{ i in xn.symbol(i) })"
+            return "\(R.symbol)[\( (0 ..< n).map{ i in xn.symbol(i) }.joined(separator: ", "))]"
         } else {
             return "\(R.symbol)\( (0 ..< 3).map{ i in xn.symbol(i) } + ["…"])"
         }
