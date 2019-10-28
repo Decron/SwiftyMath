@@ -14,7 +14,7 @@ final class DiagonalEliminator<R: EuclideanRing>: MatrixEliminator<R> {
             printCurrentMatrix()
         }
         
-        let pf = MatrixPivotFinder(size: size, components: components)
+        let pf = MatrixPivotFinder(size: size, components: components, debug: debug)
         let pivots = pf.start()
         
         log("\(pivots.count) pivots found.")

@@ -26,13 +26,14 @@ public final class MatrixPivotFinder<R: Ring> {
     private var pivots: [Int : Int] // column -> pivot row
     private var pivotRows: Set<Int>
 
-    private var debug: Bool = true
+    private var debug: Bool
     
-    public init<S: Sequence>(size: (rows: Int, cols: Int), components: S) where S.Element == MatrixComponent<R> {
+    public init<S: Sequence>(size: (rows: Int, cols: Int), components: S, debug: Bool = false) where S.Element == MatrixComponent<R> {
         self.size = size
         self.worker = RowEliminationWorker(size: size, components: components, trackRowInfos: true)
         self.pivots = [:]
         self.pivotRows = []
+        self.debug = debug
     }
     
     public func start() -> [(Int, Int)] {
@@ -70,7 +71,7 @@ public final class MatrixPivotFinder<R: Ring> {
         }
         
         pivots.forEach{ (j, i) in setPivot(i, j) }
-        print("FL-pivots:", currentPivots())
+        log("FL-pivots: \(pivots.count)")
     }
     
     private func findFLColumnPivots() {
@@ -93,7 +94,7 @@ public final class MatrixPivotFinder<R: Ring> {
             }
         }
         
-        print("FL-col-pivots:", currentPivots())
+        log("FL-col-pivots: \(pivots.count)")
     }
     
     private func findCycleFreePivots() {
@@ -130,7 +131,7 @@ public final class MatrixPivotFinder<R: Ring> {
             }
         }
         
-        print("cycle-free-pivots:", currentPivots())
+        log("cycle-free-pivots: \(pivots.count)")
     }
     
     private func findCycleFreePivot(inRow row: (Int, LinkedList<RowEntity>), pivots: [Int : Int]) -> (Int, Int)? {
@@ -219,5 +220,11 @@ public final class MatrixPivotFinder<R: Ring> {
     
     private func rowWeight(_ i: Int) -> Int {
         worker.rowWeight(i)
+    }
+    
+    private func log(_ msg: @autoclosure () -> String) {
+        if debug {
+            print(msg())
+        }
     }
 }
