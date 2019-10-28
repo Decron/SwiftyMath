@@ -17,9 +17,12 @@ public class MatrixEliminator<R: EuclideanRing> : CustomStringConvertible {
     }
     
     let size: (rows: Int, cols: Int)
-    private(set) var components: AnySequence<MatrixComponent<R>>
-    private var rowOps: [RowElementaryOperation<R>]
-    private var colOps: [ColElementaryOperation<R>]
+    
+    var components: AnySequence<MatrixComponent<R>>
+    var rowPermutation: DPermutation = .identity
+    var colPermutation: DPermutation = .identity
+    var rowOps: [RowElementaryOperation<R>]
+    var colOps: [ColElementaryOperation<R>]
     
     var debug: Bool
 
@@ -41,7 +44,7 @@ public class MatrixEliminator<R: EuclideanRing> : CustomStringConvertible {
         
         e.run()
         
-        return MatrixEliminationResult<n, m, R>(form: form, result: Matrix<n, m, R>(size: target.size, components: e.components), rowOps: e.rowOps, colOps: e.colOps)
+        return MatrixEliminationResult<n, m, R>(form: form, eliminator: e)
     }
     
     required init<S: Sequence>(size: (Int, Int), components: S, debug: Bool) where S.Element == MatrixComponent<R> {
@@ -90,10 +93,14 @@ public class MatrixEliminator<R: EuclideanRing> : CustomStringConvertible {
         
         if !transpose {
             setComponents(e.components)
+            rowPermutation = rowPermutation * e.rowPermutation
+            colPermutation = colPermutation * e.colPermutation
             rowOps += e.rowOps
             colOps += e.colOps
         } else {
             setComponents(e.components.lazy.map{ (j, i, a) in (i, j, a) })
+            rowPermutation = rowPermutation * e.colPermutation.inverse!
+            colPermutation = colPermutation * e.rowPermutation.inverse!
             rowOps += e.colOps.map{ s in s.transposed }
             colOps += e.rowOps.map{ s in s.transposed }
         }

@@ -8,14 +8,19 @@
 public struct MatrixEliminationResult<n: SizeType, m: SizeType, R: EuclideanRing> {
     public let form: MatrixEliminator<R>.Form
     public let result: Matrix<n, m, R>
+    
+    let rowPermutation: DPermutation
+    let colPermutation: DPermutation
     let rowOps: [RowElementaryOperation<R>]
     let colOps: [ColElementaryOperation<R>]
     
-    internal init(form: MatrixEliminator<R>.Form, result: Matrix<n, m, R>, rowOps: [RowElementaryOperation<R>], colOps: [ColElementaryOperation<R>]) {
+    internal init(form: MatrixEliminator<R>.Form, eliminator e: MatrixEliminator<R>) {
         self.form = form
-        self.result = result
-        self.rowOps = rowOps
-        self.colOps = colOps
+        self.result = Matrix(size: e.size, components: e.components)
+        self.rowPermutation = e.rowPermutation
+        self.colPermutation = e.colPermutation
+        self.rowOps = e.rowOps
+        self.colOps = e.colOps
     }
     
     public var rank: Int {
@@ -31,65 +36,29 @@ public struct MatrixEliminationResult<n: SizeType, m: SizeType, R: EuclideanRing
     // returns P of: P * A * Q = B
 
     public var left: Matrix<n, n, R> {
-        composeRowOps(size: result.size.rows, ops: rowOps)
-    }
-    
-    public func left(restrictedToRows rowRange: Range<Int>) -> Matrix<DynamicSize, n, R> {
-        composeRowOps(size: result.size.rows, ops: rowOps, restrictedToRows: rowRange)
-    }
-    
-    public func left(restrictedToCols colRange: Range<Int>) -> Matrix<n, DynamicSize, R> {
-        composeRowOps(size: result.size.rows, ops: rowOps, restrictedToCols: colRange)
+        // (Pn * ... * P1) * P
+        composeRowOps(rowOps) * rowPermutationMatrix
     }
     
     // returns P^{-1} of: P * A * Q = B
     
     public var leftInverse: Matrix<n, n, R> {
-        composeRowOps(size: result.size.rows, ops: rowOpsInverse)
-    }
-    
-    public func leftInverse(restrictedToRows rowRange: Range<Int>) -> Matrix<DynamicSize, n, R> {
-        composeRowOps(size: result.size.rows, ops: rowOpsInverse, restrictedToRows: rowRange)
-    }
-    
-    public func leftInverse(restrictedToCols colRange: Range<Int>) -> Matrix<n, DynamicSize, R> {
-        composeRowOps(size: result.size.rows, ops: rowOpsInverse, restrictedToCols: colRange)
-    }
-    
-    private var rowOpsInverse: [RowElementaryOperation<R>] {
-        rowOps.reversed().map{ $0.inverse }
+        // P^{-1} * (P1^{-1} * ... * Pn^{-1})
+        rowPermutationInverseMatrix * composeRowOps(rowOpsInverse)
     }
     
     // returns Q of: P * A * Q = B
     
     public var right: Matrix<m, m, R> {
-        composeColOps(size: result.size.cols, ops: colOps)
-    }
-    
-    public func right(restrictedToRows rowRange: Range<Int>) -> Matrix<DynamicSize, m, R> {
-        composeColOps(size: result.size.cols, ops: colOps, restrictedToRows: rowRange)
-    }
-    
-    public func right(restrictedToCols colRange: Range<Int>) -> Matrix<m, DynamicSize, R> {
-        composeColOps(size: result.size.cols, ops: colOps, restrictedToCols: colRange)
+        // Q * (Q1 * ... * Qn)
+        colPermutationMatrix * composeColOps(colOps)
     }
     
     // returns Q^{-1} of: P * A * Q = B
     
     public var rightInverse: Matrix<m, m, R> {
-        composeColOps(size: result.size.cols, ops: colOpsInverse)
-    }
-    
-    public func rightInverse(restrictedToRows rowRange: Range<Int>) -> Matrix<DynamicSize, m, R> {
-        composeColOps(size: result.size.cols, ops: colOpsInverse, restrictedToRows: rowRange)
-    }
-    
-    public func rightInverse(restrictedToCols colRange: Range<Int>) -> Matrix<m, DynamicSize, R> {
-        composeColOps(size: result.size.cols, ops: colOpsInverse, restrictedToCols: colRange)
-    }
-    
-    private var colOpsInverse: [ColElementaryOperation<R>] {
-        colOps.reversed().map{ $0.inverse }
+        // (Qn^{-1} * ... * Q1^{-1}) * Q^{-1}
+        composeColOps(colOpsInverse) * colPermutationInverseMatrix
     }
     
     // Returns the matrix consisting of the basis vectors of Ker(A).
@@ -110,7 +79,7 @@ public struct MatrixEliminationResult<n: SizeType, m: SizeType, R: EuclideanRing
     
     public var kernelMatrix: Matrix<m, DynamicSize, R>  {
         assert(result.isDiagonal)
-        return right(restrictedToCols: rank ..< result.size.cols)
+        return right.submatrix(colRange: rank ..< result.size.cols)
     }
     
     // Returns the transition matrix T from Z = Ker(A) to I,
@@ -128,7 +97,7 @@ public struct MatrixEliminationResult<n: SizeType, m: SizeType, R: EuclideanRing
     
     public var kernelTransitionMatrix: Matrix<DynamicSize, m, R> {
         assert(result.isDiagonal)
-        return rightInverse(restrictedToRows: rank ..< result.size.cols)
+        return rightInverse.submatrix(rowRange: rank ..< result.size.cols)
     }
     
     // Returns the matrix consisting of the basis vectors of Im(A).
@@ -150,7 +119,8 @@ public struct MatrixEliminationResult<n: SizeType, m: SizeType, R: EuclideanRing
     public var imageMatrix: Matrix<n, DynamicSize, R> {
         assert(result.isDiagonal)
         let r = rank
-        return leftInverse(restrictedToCols: 0 ..< r) * result.submatrix(rowRange: 0 ..< r, colRange: 0 ..< r)
+        return leftInverse.submatrix(colRange: 0 ..< r)
+            * result.submatrix(rowRange: 0 ..< r, colRange: 0 ..< r)
     }
     
     // Returns the transition matrix T from Im(A) to D_r,
@@ -167,7 +137,7 @@ public struct MatrixEliminationResult<n: SizeType, m: SizeType, R: EuclideanRing
 
     public var imageTransitionMatrix: Matrix<DynamicSize, n, R> {
         assert(result.isDiagonal)
-        return left(restrictedToRows: 0 ..< rank)
+        return left.submatrix(rowRange: 0 ..< rank)
     }
     
     // Find a solution x to: Ax = b.
@@ -202,36 +172,44 @@ public struct MatrixEliminationResult<n: SizeType, m: SizeType, R: EuclideanRing
         return Q * y
     }
     
-    //  Given row ops [P1, ..., Pn],
-    //  produce P = (Pn ... P1) * I by applying the row-ops from P1 to Pn.
+    private var rowPermutationMatrix: Matrix<n, n, R> {
+        rowPermutation.asMatrix(size: result.size.rows, over: R.self).as(Matrix.self)
+    }
     
-    private func composeRowOps<n, m, S>(size: Int, ops: S, restrictedToCols colRange: Range<Int>? = nil) -> Matrix<n, m, R> where S: Sequence, S.Element == RowElementaryOperation<R> {
-        let I = DMatrix<R>.identity(size: size).submatrix(colRange: colRange ?? 0 ..< size)
-        return I.applyRowOperations(ops).as(Matrix.self)
+    private var rowPermutationInverseMatrix: Matrix<n, n, R> {
+        rowPermutation.inverse!.asMatrix(size: result.size.rows, over: R.self).as(Matrix.self)
+    }
+    
+    private var colPermutationMatrix: Matrix<m, m, R> {
+        colPermutation.inverse!.asMatrix(size: result.size.cols, over: R.self).as(Matrix.self)
+    }
+    
+    private var colPermutationInverseMatrix: Matrix<m, m, R> {
+        colPermutation.asMatrix(size: result.size.cols, over: R.self).as(Matrix.self)
+    }
+    
+    private var rowOpsInverse: [RowElementaryOperation<R>] {
+        rowOps.reversed().map{ $0.inverse }
+    }
+    
+    private var colOpsInverse: [ColElementaryOperation<R>] {
+        colOps.reversed().map{ $0.inverse }
     }
     
     //  Given row ops [P1, ..., Pn],
-    //  produce P = I * (Pn ... P1) by applying the corresponding col-ops from Pn to P1.
+    //  produce P = (Pn ... P1) * I by applying the row-ops from P1 to Pn.
     
-    private func composeRowOps<n, m, S>(size: Int, ops: S, restrictedToRows rowRange: Range<Int>) -> Matrix<n, m, R> where S: Sequence, S.Element == RowElementaryOperation<R> {
-        let I = DMatrix<R>.identity(size: size).submatrix(rowRange: rowRange)
-        return I.applyColOperations(ops.reversed().map{ $0.opposite }).as(Matrix.self)
+    private func composeRowOps<n, m, S>(_ ops: S) -> Matrix<n, m, R> where S: Sequence, S.Element == RowElementaryOperation<R> {
+        let I = DMatrix<R>.identity(size: result.size.rows)
+        return I.applyRowOperations(ops).as(Matrix.self)
     }
     
     //  Given col ops [Q1, ..., Qn],
     //  produce Q = I * (Q1 ... Qn) by applying the col-ops from Q1 to Qn.
     
-    private func composeColOps<n, m, S>(size: Int, ops: S, restrictedToRows rowRange: Range<Int>? = nil) -> Matrix<n, m, R> where S: Sequence, S.Element == ColElementaryOperation<R> {
-        let I = DMatrix<R>.identity(size: size).submatrix(rowRange: rowRange ?? 0 ..< size)
+    private func composeColOps<n, m, S>(_ ops: S) -> Matrix<n, m, R> where S: Sequence, S.Element == ColElementaryOperation<R> {
+        let I = DMatrix<R>.identity(size: result.size.cols)
         return I.applyColOperations(ops).as(Matrix.self)
-    }
-    
-    //  Given col ops [Q1, ..., Qn],
-    //  produce Q = (Q1 ... Qn) * I by applying the corresponding row-ops from Qn to Q1.
-    
-    private func composeColOps<n, m, S>(size: Int, ops: S, restrictedToCols colRange: Range<Int>) -> Matrix<n, m, R> where S: Sequence, S.Element == ColElementaryOperation<R> {
-        let I = DMatrix<R>.identity(size: size).submatrix(colRange: colRange)
-        return I.applyRowOperations(ops.reversed().map{ $0.opposite }).as(Matrix.self)
     }
 }
 
